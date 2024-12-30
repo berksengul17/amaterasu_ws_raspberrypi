@@ -49,7 +49,7 @@ class MPU6050(Node):
         quaternion = quaternion_from_euler(self.kalman_roll['angle'], self.kalman_pitch['angle'], self.kalman_yaw['angle'])
 
         self.get_logger().info(f"Roll: {self.kalman_roll['angle']:.2f}° Pitch: {self.kalman_pitch['angle']:.2f}° Yaw: {self.kalman_yaw['angle']:.2f}°")
-
+    
 
         imu = Imu()
         imu.header.stamp = self.get_clock().now().to_msg()

@@ -39,7 +39,7 @@ class RobotController(Node):
 
         # Subscribe to bounding box topic and IMU topic
         self.ball_bounding_box_sub = self.create_subscription(Float32MultiArray, '/ball/bounding_box', self.bounding_box_callback, 10)
-        self.mag_sub = self.create_subscription(MagneticField, 'magnetometer/smoothed', self.update_mag, 10)
+        self.mag_sub = self.create_subscription(MagneticField, '/magnetometer/smoothed', self.update_mag, 10)
 
         ## şu an bunlarla bir şey yapamıyoz
         #self.create_subscription(Float32MultiArray, "/robot/bounding_box", self.update_position, 10)
