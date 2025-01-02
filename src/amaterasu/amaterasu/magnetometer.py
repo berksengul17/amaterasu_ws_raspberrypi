@@ -39,7 +39,7 @@ class QMC5883LCompass(Node):
         self.heading_history.append(heading)
 
         magnetic_field = Float32()
-        magnetic_field.data = sum(self.heading_history) / len(self.heading_history)
+        magnetic_field.data = heading
 
         self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
         

@@ -43,7 +43,7 @@ class Kalman:
         ) + ProcessNoise
 
         # Measurement
-        Innovation = measurement - np.matmul(ObservationMatrix, DynamicModel)
+        Innovation = self.normalize_angle(measurement - np.matmul(ObservationMatrix, DynamicModel))
         InnovationCovariance = np.matmul(
             np.matmul(ObservationMatrix, PredictorCovariance),
             ObservationMatrix.T
@@ -60,7 +60,15 @@ class Kalman:
             PredictorCovariance
         )
 
+        # Normalize the updated yaw angle
+        StateUpdate[0, 0] = self.normalize_angle(StateUpdate[0, 0])
+
         return StateUpdate[0, 0], StateUpdate, CovarianceUpdate
+    
+    def normalize_angle(self, angle):
+        """Normalize angle to the range -180° to 180°."""
+        return (angle + 180) % 360 - 180
+
 
     @property
     def yaw(self):
