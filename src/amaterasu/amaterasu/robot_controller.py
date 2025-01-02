@@ -47,8 +47,6 @@ class RobotController(Node):
 
         ## şu an bunlarla bir şey yapamıyoz
         #self.create_subscription(Float32MultiArray, "/robot/bounding_box", self.update_position, 10)
-        #self.create_subscription(Imu, '/imu/data', self.imu_callback, 10)
-        #self.imu_publisher = self.create_publisher(Imu, '/imu/data', 10)
         
         # self.publisher = self.create_publisher(Pose, "/robot/position", 10)
         self.marker_publisher = self.create_publisher(MarkerArray, "/ball_markers", 10)
@@ -73,11 +71,9 @@ class RobotController(Node):
 
         self.active_marker_ids = set()
 
-        self.current_heading = 0
-
     def imu_fused_callback(self, msg):
-        self.current_heading = msg.data
-        self.get_logger().info(f"Imu fused: {self.current_heading:.2f}")
+        self.robot_yaw = msg.data
+        self.get_logger().info(f"Imu fused: {self.robot_yaw:.2f}")
 
     def bounding_box_callback(self, msg):
             """Convert bounding boxes to global coordinates dynamically."""
@@ -140,10 +136,10 @@ class RobotController(Node):
         self.current_orientation = (roll, pitch, yaw)
         self.get_logger().info(f"Orientation updated: Roll={roll}, Pitch={pitch}, Yaw={yaw}")
 
-    def update_heading(self, msg):
-        """Update the robot's heading from Magnetometer data."""
-        self.current_heading = msg.magnetic_field.x
-        self.get_logger().info(f"Heading updated: {self.current_heading:.2f}°")
+    # def update_heading(self, msg):
+    #     """Update the robot's heading from Magnetometer data."""
+    #     self.current_heading = msg.magnetic_field.x
+    #     self.get_logger().info(f"Heading updated: {self.current_heading:.2f}°")
 
     def move_to_ball(self):
         """Use heading and orientation to navigate to the ball."""
