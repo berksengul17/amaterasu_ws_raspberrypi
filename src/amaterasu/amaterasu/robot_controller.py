@@ -79,40 +79,6 @@ class RobotController(Node):
         self.current_heading = msg.data
         self.get_logger().info(f"Imu fused: {self.current_heading:.2f}")
 
-    def imu_callback(self, msg):
-        """Update robot's current yaw from IMU data."""
-        # Extract quaternion orientation from IMU message
-        #### Burayı aldığımız imunun verdiği dataya göre değiştiricez muhtemelen !!!!!!!!!
-        x = msg.orientation.x
-        y = msg.orientation.y
-        z = msg.orientation.z
-        w = msg.orientation.w
-
-        # Convert quaternion to Euler angles
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        yaw = math.atan2(t3, t4)
-
-        self.robot_yaw = yaw  # Update the robot's yaw
-        self.get_logger().info(f"Current yaw: {self.robot_yaw:.2f} radians")
-
-        # Create a new Imu message to publish
-        imu_msg = Imu()
-
-        # Update the orientation (convert yaw back to quaternion)
-        imu_msg.orientation.x = 0.0
-        imu_msg.orientation.y = 0.0
-        imu_msg.orientation.z = math.sin(self.robot_yaw / 2)  # sin(yaw/2)
-        imu_msg.orientation.w = math.cos(self.robot_yaw / 2)  # cos(yaw/2)
-
-        # Copy angular_velocity and linear_acceleration from the incoming message
-        imu_msg.angular_velocity = msg.angular_velocity
-        imu_msg.linear_acceleration = msg.linear_acceleration
-
-        # Publish the updated IMU message
-        self.publisher.publish(imu_msg)
-        self.get_logger().info(f"Published updated IMU data with yaw: {self.robot_yaw:.2f} radians")
-
     def bounding_box_callback(self, msg):
             """Convert bounding boxes to global coordinates dynamically."""
             self.get_logger().info(f"Ball bounding box: {msg}")
