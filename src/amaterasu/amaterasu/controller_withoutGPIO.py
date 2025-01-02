@@ -1,0 +1,228 @@
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist, PoseStamped, TransformStamped
+from nav_msgs.msg import Path
+from std_msgs.msg import Float32, Float32MultiArray
+from visualization_msgs.msg import Marker, MarkerArray
+from tf2_ros import TransformBroadcaster, Buffer, TransformListener
+import math
+import time
+
+
+class RobotController(Node):
+    def __init__(self):
+        super().__init__('robot_controller')
+
+        # Subscriptions
+        self.imu_fused_sub = self.create_subscription(
+            Float32,
+            "/imu/fused",
+            self.imu_fused_callback,
+            10
+        )
+        self.bounding_box_sub = self.create_subscription(
+            Float32MultiArray,
+            '/ball/bounding_box',
+            self.bounding_box_callback,
+            10
+        )
+
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.path_publisher = self.create_publisher(Path, "/robot/trajectory", 10)
+        self.marker_publisher = self.create_publisher(MarkerArray, "/ball_markers", 10)
+
+        # TF2 Listener
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        # Transform Broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        # Robot state
+        self.robot_position = [0.0, 0.0]
+        self.robot_yaw = 0.0  # Current yaw from IMU
+        self.linear_velocity = 0.0
+        self.angular_velocity = 0.0
+
+        # Path initialization
+        self.path = Path()
+        self.path.header.frame_id = "map"
+
+        # Platform and camera settings
+        self.grid_width = 128  # Platform width (meters)
+        self.grid_height = 128  # Platform height (meters)
+        self.camera_resolution = (256, 256)  # Camera resolution (pixels)
+
+        # Ball positions
+        self.ball_positions = []
+
+        # Timer for movement logic
+        self.create_timer(0.1, self.move_to_closest_ball)
+
+    def imu_fused_callback(self, msg):
+        """
+        Update the robot's yaw from IMU and magnetometer data.
+        """
+        self.robot_yaw = msg.data
+        self.get_logger().info(f"Updated yaw from IMU: {self.robot_yaw:.2f} radians")
+
+    def bounding_box_callback(self, msg):
+        """
+        Process bounding box data from the camera and transform to global coordinates.
+        """
+        self.ball_positions = []  # Clear previous positions
+        marker_array = MarkerArray()
+
+        for i in range(0, len(msg.data), 4):
+            x1, y1, x2, y2 = msg.data[i:i + 4]
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+
+            # Convert to camera frame coordinates
+            camera_x = (center_x / self.camera_resolution[0]) * self.grid_width
+            camera_y = (center_y / self.camera_resolution[1]) * self.grid_height
+            camera_z = 0.0  # Assume objects are on the ground
+
+            # Transform to global coordinates
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    "map",  # Target frame
+                    "camera_link",  # Source frame
+                    self.get_clock().now()
+                )
+                global_position = self.transform_point(camera_x, camera_y, camera_z, transform)
+                self.ball_positions.append((global_position.x, global_position.y))
+
+                # Add a marker for visualization
+                marker = self.create_marker(global_position.x, global_position.y)
+                marker_array.markers.append(marker)
+
+            except Exception as e:
+                self.get_logger().error(f"Transform failed: {e}")
+
+        # Publish markers
+        self.marker_publisher.publish(marker_array)
+        self.get_logger().info(f"Ball positions in global frame: {self.ball_positions}")
+
+    def move_to_closest_ball(self):
+        """
+        Move the robot toward the closest ball.
+        """
+        if not self.ball_positions:
+            self.get_logger().info("No balls detected.")
+            return
+
+        # Sort balls by distance
+        self.ball_positions.sort(key=lambda pos: self.distance_to_ball(pos))
+        target_ball = self.ball_positions[0]
+
+        # Calculate yaw error
+        yaw_error = self.calculate_yaw_error(target_ball)
+
+        twist_msg = Twist()
+
+        if abs(yaw_error) > 0.1:  # If yaw error is significant, adjust yaw
+            twist_msg.angular.z = 0.5 if yaw_error > 0 else -0.5
+        else:  # Otherwise, move forward
+            distance = self.distance_to_ball(target_ball)
+            if distance > 1.0:  # Move if not close enough
+                twist_msg.linear.x = 0.5
+            else:  # Extinguish ball if close
+                self.extinguish_ball(target_ball)
+
+        self.cmd_vel_pub.publish(twist_msg)
+
+    def calculate_yaw_error(self, target_pos):
+        """
+        Calculate yaw error between robot and the target position.
+        """
+        dx = target_pos[0] - self.robot_position[0]
+        dy = target_pos[1] - self.robot_position[1]
+        desired_yaw = math.atan2(dy, dx)
+        yaw_error = desired_yaw - self.robot_yaw
+        return (yaw_error + math.pi) % (2 * math.pi) - math.pi  # Normalize to [-π, π]
+
+    def extinguish_ball(self, ball):
+        """
+        Simulate extinguishing a ball.
+        """
+        self.get_logger().info(f"Extinguishing ball at position: {ball}")
+        time.sleep(2)  # Simulate extinguishing time
+        self.ball_positions.remove(ball)
+
+        # Stop movement after extinguishing
+        twist_msg = Twist()
+        self.cmd_vel_pub.publish(twist_msg)
+
+    def distance_to_ball(self, ball_pos):
+        """
+        Calculate the Euclidean distance to a ball.
+        """
+        dx = ball_pos[0] - self.robot_position[0]
+        dy = ball_pos[1] - self.robot_position[1]
+        return math.sqrt(dx**2 + dy**2)
+
+    def publish_transform(self):
+        """
+        Publish the robot's transform for visualization in RViz.
+        """
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"
+        t.child_frame_id = "base_link"
+        t.transform.translation.x = self.robot_position[0]
+        t.transform.translation.y = self.robot_position[1]
+        t.transform.rotation.z = math.sin(self.robot_yaw / 2)
+        t.transform.rotation.w = math.cos(self.robot_yaw / 2)
+        self.tf_broadcaster.sendTransform(t)
+
+    @staticmethod
+    def transform_point(x, y, z, transform):
+        """
+        Transform a point from one frame to another using a transform.
+        """
+        from geometry_msgs.msg import Point
+        transformed_point = Point()
+        transformed_point.x = x + transform.transform.translation.x
+        transformed_point.y = y + transform.transform.translation.y
+        transformed_point.z = z + transform.transform.translation.z
+        return transformed_point
+
+    @staticmethod
+    def create_marker(x, y):
+        """
+        Create a marker for RViz visualization.
+        """
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = x
+        marker.pose.position.y = y
+        marker.pose.position.z = 0.0
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        return marker
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    robot_controller = RobotController()
+
+    try:
+        rclpy.spin(robot_controller)
+    except KeyboardInterrupt:
+        robot_controller.get_logger().info("Shutting down robot controller...")
+    finally:
+        robot_controller.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
