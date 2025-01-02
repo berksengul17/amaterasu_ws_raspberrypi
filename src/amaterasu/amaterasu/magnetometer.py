@@ -40,6 +40,8 @@ class QMC5883LCompass(Node):
 
         magnetic_field = Float32()
         magnetic_field.data = sum(self.heading_history) / len(self.heading_history)
+
+        self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
         
         self.publisher.publish(magnetic_field)
         
@@ -145,24 +147,6 @@ def main(args=None):
 
     compass.destroy_node()
     rclpy.shutdown()
-
-
-
-# Example Usage
+    
 if __name__ == "__main__":
     main()
-    # compass = QMC5883LCompass()
-    # compass.init()
-    # compass.calibrate(duration=15)
-    # compass.set_magnetic_declination(5, 34)  # Adjust declination for your location
-
-    # while True:
-    #     raw_azimuth = compass.get_azimuth()  # Get raw azimuth and update the history
-    #     smooth_azimuth = compass.smoothed_heading()  # Calculate smoothed azimuth
-
-    #     if smooth_azimuth is not None:
-    #         print(f"Raw Azimuth: {raw_azimuth:.2f}°, Smoothed Azimuth: {smooth_azimuth:.2f}°")
-    #     else:
-    #         print("Calculating smoothing...")
-
-    #     time.sleep(0.5)

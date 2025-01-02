@@ -70,14 +70,8 @@ class MPU6050(Node):
 
         self.yaw_angle = (self.yaw_angle + gyro['z'] * self.dt) % 360
 
-        # Apply Kalman filter
-        # self.kalman_roll = self.kalman_filter(self.kalman_roll, gyro['x'], accel_angles['roll'], self.dt)
-        # self.kalman_pitch = self.kalman_filter(self.kalman_pitch, gyro['y'], accel_angles['pitch'], self.dt)
-        # self.kalman_yaw = self.kalman_filter(self.kalman_yaw, gyro['z'], accel_angles['yaw'], self.dt)
-
         self.get_logger().info(f"Yaw: {self.yaw_angle:.2f}°")
     
-
         yaw = Float32()
         yaw.data = gyro['z']
         
@@ -141,26 +135,6 @@ class MPU6050(Node):
         print("Calibration complete.")
         print(f"Accel Offsets: {self.accel_offsets}")
         print(f"Gyro Offsets: {self.gyro_offsets}")
-
-    def calculate_angles(self, accel):
-        """Calculate roll and pitch angles from accelerometer data."""
-        roll = math.atan2(accel['y'], math.sqrt(accel['x'] ** 2 + accel['z'] ** 2))
-        pitch = math.atan2(-accel['x'], math.sqrt(accel['y'] ** 2 + accel['z'] ** 2))
-        yaw = math.atan2(accel['y'], accel['x'])
-        return {'roll': roll, 'pitch': pitch, 'yaw': yaw}
-
-    def kalman_filter(self, kalman_state, gyro_rate, accel_angle, dt):
-        """Apply Kalman filter."""
-        # Predict
-        kalman_state['angle'] += gyro_rate * dt
-        kalman_state['uncertainty'] += (0.004 ** 2) * 16
-
-        # Update
-        kalman_gain = kalman_state['uncertainty'] / (kalman_state['uncertainty'] + 9)
-        kalman_state['angle'] += kalman_gain * (accel_angle - kalman_state['angle'])
-        kalman_state['uncertainty'] *= (1 - kalman_gain)
-
-        return kalman_state
     
 def main(args=None):
     rclpy.init(args=args)
@@ -179,30 +153,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-    # mpu = MPU6050()
-    # mpu.initialize()
-    # print("MPU-6050 Initialized. Starting calibration...")
-    # mpu.calibrate()
-
-    # print("Reading filtered data...")
-    # loop_timer = time.time()
-    # try:
-    #     while True:
-    #         dt = time.time() - loop_timer
-    #         loop_timer = time.time()
-
-    #         accel = mpu.get_accel_data()
-    #         gyro = mpu.get_gyro_data()
-
-    #         accel_angles = mpu.calculate_angles(accel)
-
-    #         # Apply Kalman filter
-    #         mpu.kalman_roll = mpu.kalman_filter(mpu.kalman_roll, gyro['x'], accel_angles['roll'], dt)
-    #         mpu.kalman_pitch = mpu.kalman_filter(mpu.kalman_pitch, gyro['y'], accel_angles['pitch'], dt)
-    #         mpu.kalman_yaw = mpu.kalman_filter(mpu.kalman_yaw, gyro['z'], accel_angles['yaw'], dt)
-
-    #         print(f"Roll: {mpu.kalman_roll['angle']:.2f}° Pitch: {mpu.kalman_pitch['angle']:.2f}° Yaw: {mpu.kalman_yaw['angle']:.2f}°")
-
-    #         time.sleep(0.05)  # 50ms delay
-    # except KeyboardInterrupt:
-    #     print("Exiting...")

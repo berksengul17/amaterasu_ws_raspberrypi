@@ -2,7 +2,7 @@ import rclpy
 import math
 import time
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Float32
 from sensor_msgs.msg import Imu, CompressedImage, MagneticField
 from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
 from nav_msgs.msg import Path
@@ -16,22 +16,24 @@ class RobotController(Node):
 
         # # GPIO setup
         GPIO.setmode(GPIO.BCM)
-        self.right_wheel_forward = 24
-        self.right_wheel_backward = 25
-        self.left_wheel_forward = 27
-        self.left_wheel_backward = 22
+        self.EnaA = 17
+        self.In1A = 27
+        self.In2A = 22
+        self.EnaB = 23
+        self.In1B = 24
+        self.In2B = 25
 
-        GPIO.setup(self.right_wheel_forward, GPIO.OUT)
-        GPIO.setup(self.right_wheel_backward, GPIO.OUT)
-        GPIO.setup(self.left_wheel_forward, GPIO.OUT)
-        GPIO.setup(self.left_wheel_backward, GPIO.OUT)
+        GPIO.setup(self.EnaA,GPIO.OUT)
+        GPIO.setup(self.In1A,GPIO.OUT)
+        GPIO.setup(self.In2A,GPIO.OUT)
+        GPIO.setup(self.EnaB,GPIO.OUT)
+        GPIO.setup(self.In1B,GPIO.OUT)
+        GPIO.setup(self.In2B,GPIO.OUT)
 
-        # Create PWM objects for speed control
-        self.right_wheel_pwm = GPIO.PWM(self.right_wheel_forward, 100)  # 100 Hz frequency
-        self.left_wheel_pwm = GPIO.PWM(self.left_wheel_forward, 100)
-
-        self.right_wheel_pwm.start(0)  # Start with 0% duty cycle (stopped)
-        self.left_wheel_pwm.start(0)
+        self.pwmA = GPIO.PWM(self.EnaA, 100)
+        self.pwmA.start(0)
+        self.pwmB = GPIO.PWM(self.EnaB, 100)
+        self.pwmB.start(0)
 
         self.stop_motors()
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -39,8 +41,7 @@ class RobotController(Node):
 
         # Subscribe to bounding box topic and IMU topic
         self.ball_bounding_box_sub = self.create_subscription(Float32MultiArray, '/ball/bounding_box', self.bounding_box_callback, 10)
-        self.mag_sub = self.create_subscription(MagneticField, '/magnetometer/smoothed', self.update_mag, 10)
-        self.create_subscription(Imu, '/imu/raw_data', self.update_orientation, 10)
+        self.imu_mag_sub = self.create_subscription(Float32, "/imu/fused", self.imu_fused_callback, 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -72,8 +73,11 @@ class RobotController(Node):
 
         self.active_marker_ids = set()
 
-    def update_mag(self, msg):
-        pass
+        self.current_heading = 0
+
+    def imu_fused_callback(self, msg):
+        self.current_heading = msg.data
+        self.get_logger().info(f"Imu fused: {self.current_heading:.2f}")
 
     def imu_callback(self, msg):
         """Update robot's current yaw from IMU data."""
@@ -189,9 +193,6 @@ class RobotController(Node):
             self.adjust_yaw(yaw_error)
         else:
             self.move_forward()
-
-
-    
 
     def calculate_yaw_error(self, target_pos):
         """Calculate yaw error between robot and the target."""
@@ -375,7 +376,6 @@ class RobotController(Node):
         dy = ball_pos[1] - self.robot_position[1]
         return math.sqrt(dx**2 + dy**2)
 
-
 def main(args=None):
     rclpy.init(args=args)
     robot_controller = RobotController()
@@ -383,7 +383,7 @@ def main(args=None):
     try:
 #        rclpy.spin(robot_controller)
         while rclpy.ok():
-            robot_controller.move_to_ball()
+            #robot_controller.move_to_ball()
             rclpy.spin_once(robot_controller, timeout_sec=0.1)
     except KeyboardInterrupt:
         robot_controller.get_logger().info("Shutting down robot controller...")
