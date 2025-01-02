@@ -6,7 +6,7 @@ from std_msgs.msg import Float32MultiArray
 from sensor_msgs.msg import Imu, CompressedImage, MagneticField
 from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
 from nav_msgs.msg import Path
-from tf2_ros import TransformBroadcaster
+from tf2_ros import TransformBroadcaster, Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 import RPi.GPIO as GPIO
 
@@ -40,6 +40,9 @@ class RobotController(Node):
         # Subscribe to bounding box topic and IMU topic
         self.ball_bounding_box_sub = self.create_subscription(Float32MultiArray, '/ball/bounding_box', self.bounding_box_callback, 10)
         self.mag_sub = self.create_subscription(MagneticField, '/magnetometer/smoothed', self.update_mag, 10)
+        self.create_subscription(Imu, '/imu/raw_data', self.update_orientation, 10)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         ## şu an bunlarla bir şey yapamıyoz
         #self.create_subscription(Float32MultiArray, "/robot/bounding_box", self.update_position, 10)
@@ -107,66 +110,88 @@ class RobotController(Node):
         self.get_logger().info(f"Published updated IMU data with yaw: {self.robot_yaw:.2f} radians")
 
     def bounding_box_callback(self, msg):
-        """Convert bounding boxes to global coordinates and add to ball list."""
-        self.get_logger().info(f"Ball bounding box: {msg}")
-        self.ball_positions = []  # Reset positions
-        marker_array = MarkerArray()
-        current_marker_ids = set()
+            """Convert bounding boxes to global coordinates dynamically."""
+            self.get_logger().info(f"Ball bounding box: {msg}")
+            self.ball_positions = []  # Reset positions
+            marker_array = MarkerArray()
+            current_marker_ids = set()
 
-        for i in range(0, len(msg.data), 4):
-            x1, y1, x2, y2 = msg.data[i:i+4]
-            center_x = (x1 + x2) / 2
-            center_y = (y1 + y2) / 2
+            for i in range(0, len(msg.data), 4):
+                x1, y1, x2, y2 = msg.data[i:i + 4]
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
 
-            # Convert to global coordinates
-            global_x = (center_x / self.camera_resolution[0]) * self.grid_width
-            global_y = (center_y / self.camera_resolution[1]) * self.grid_height
-            # (0,0) is top left in images and bottom left in normal coordinate system
-            transformed_y = self.grid_height - global_y
+                # Convert to camera frame coordinates
+                camera_x = (center_x / self.camera_resolution[0]) * self.grid_width
+                camera_y = (center_y / self.camera_resolution[1]) * self.grid_height
+                camera_z = 0.0  # Assume objects are on the ground
 
-            self.ball_positions.append((global_x, transformed_y))
+                # Transform to global coordinates
+                try:
+                    transform = self.tf_buffer.lookup_transform(
+                        "map",  # Target frame
+                        "camera_link",  # Source frame
+                        self.get_clock().now()
+                    )
+                    point_in_global = self.transform_point(camera_x, camera_y, camera_z, transform)
+                    self.ball_positions.append((point_in_global.x, point_in_global.y))
 
-                    # Create a marker for each ball
-            marker = Marker()
-            marker.header.frame_id = "map"  # Reference frame for the markers
-            marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = "balls"
-            marker.id = i // 4  # Unique ID for each marker
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            marker.pose.position.x = global_x
-            marker.pose.position.y = transformed_y
-            marker.pose.position.z = 0.0  # Assume balls are on the ground
-            marker.pose.orientation.x = 0.0
-            marker.pose.orientation.y = 0.0
-            marker.pose.orientation.z = 0.0
-            marker.pose.orientation.w = 1.0
-            marker.scale.x = 10.0  # Size of the ball (in meters)
-            marker.scale.y = 10.0
-            marker.scale.z = 10.0
-            marker.color.a = 1.0  # Transparency (1.0 = fully visible)
-            marker.color.r = 1.0  # Red color
-            marker.color.g = 0.0
-            marker.color.b = 0.0
+                    # Create marker for visualization
+                    marker = self.create_marker(point_in_global.x, point_in_global.y)
+                    marker_array.markers.append(marker)
+                    current_marker_ids.add(marker.id)
 
-            marker_array.markers.append(marker)
-            current_marker_ids.add(marker.id)
+                except tf2_ros.LookupException:
+                    self.get_logger().error("Transform unavailable for camera frame!")
 
-        markers_to_remove = self.active_marker_ids - current_marker_ids
-        for marker_id in markers_to_remove:
-            delete_marker = Marker()
-            delete_marker.header.frame_id = "map"
-            delete_marker.header.stamp = self.get_clock().now().to_msg()
-            delete_marker.ns = "balls"
-            delete_marker.id = marker_id
-            delete_marker.action = Marker.DELETE
-            marker_array.markers.append(delete_marker)
+            self.marker_publisher.publish(marker_array)
+            self.get_logger().info(f"Ball positions: {self.ball_positions}")
 
-        self.active_marker_ids = current_marker_ids
+    #yeni kod buraya eklendi
+    @staticmethod
+    def transform_point(x, y, z, transform):
+        """Transform a point using a TransformStamped."""
+        point = PoseStamped()
+        point.pose.position.x = x
+        point.pose.position.y = y
+        point.pose.position.z = z
+        transformed_point = tf2_geometry_msgs.do_transform_pose(point, transform)
+        return transformed_point.pose.position
 
-        self.marker_publisher.publish(marker_array)
+    def update_orientation(self, msg):
+        """Update the robot's orientation from IMU data."""
+        # Convert quaternion to Euler angles
+        x = msg.orientation.x
+        y = msg.orientation.y
+        z = msg.orientation.z
+        w = msg.orientation.w
 
-        self.get_logger().info(f"Ball positions: {self.ball_positions}")
+        roll, pitch, yaw = tf_transformations.euler_from_quaternion([x, y, z, w])
+        self.current_orientation = (roll, pitch, yaw)
+        self.get_logger().info(f"Orientation updated: Roll={roll}, Pitch={pitch}, Yaw={yaw}")
+
+    def update_heading(self, msg):
+        """Update the robot's heading from Magnetometer data."""
+        self.current_heading = msg.magnetic_field.x
+        self.get_logger().info(f"Heading updated: {self.current_heading:.2f}°")
+
+    def move_to_ball(self):
+        """Use heading and orientation to navigate to the ball."""
+        if not self.ball_positions:
+            self.get_logger().info("No balls to move to.")
+            return
+
+        target_ball = self.ball_positions[0]  # Closest ball logic remains the same
+        yaw_error = self.calculate_yaw_error(target_ball)
+
+        # Use IMU orientation for smoother yaw adjustments
+        if abs(yaw_error) > 0.1:
+            self.adjust_yaw(yaw_error)
+        else:
+            self.move_forward()
+
+
+    
 
     def calculate_yaw_error(self, target_pos):
         """Calculate yaw error between robot and the target."""
@@ -358,7 +383,6 @@ def main(args=None):
     try:
 #        rclpy.spin(robot_controller)
         while rclpy.ok():
-            robot_controller.move_forward()
             robot_controller.move_to_ball()
             rclpy.spin_once(robot_controller, timeout_sec=0.1)
     except KeyboardInterrupt:

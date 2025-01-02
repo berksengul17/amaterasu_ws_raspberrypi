@@ -2,9 +2,11 @@ import smbus
 import rclpy
 import time
 import math
+# from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from tf_transformations import quaternion_from_euler
+# from tf2_ros import TransformBroadcaster
+from std_msgs.msg import Float32
 
 # MPU-6050 I2C address
 MPU6050_ADDR = 0x68
@@ -25,42 +27,65 @@ class MPU6050(Node):
         self.kalman_roll = {'angle': 0, 'uncertainty': 2 * 2}
         self.kalman_pitch = {'angle': 0, 'uncertainty': 2 * 2}
         self.kalman_yaw = {'angle': 0, 'uncertainty': 2 * 2}
+        # self.tf_broadcaster = TransformBroadcaster(self)
 
+        self.yaw_angle = 0
+
+        self.last_time = time.time()
         self.dt = 0.1
 
-        self.publisher = self.create_publisher(Imu, "/imu/raw_data", 10)
+        self.publisher = self.create_publisher(Float32, "/imu/raw_data", 10)
         self.timer = self.create_timer(self.dt, self.publish_imu)
 
     def initialize(self):
         """Initialize the MPU-6050."""
         self.bus.write_byte_data(self.addr, PWR_MGMT_1, 0)
         time.sleep(0.1)
+        
+    # #yeni kod buraya eklendi       
+    # def get_transform(self):
+    #     """Get the IMU's transform as a TransformStamped message."""
+    #     t = TransformStamped()
+    #     t.header.stamp = self.get_clock().now().to_msg()
+    #     t.header.frame_id = "base_link"  # Match the robot's frame
+    #     t.child_frame_id = "imu_link"
+
+    #     quaternion = quaternion_from_euler(
+    #         self.kalman_roll['angle'], self.kalman_pitch['angle'], self.kalman_yaw['angle']
+    #     )
+    #     t.transform.translation.x = 0.0
+    #     t.transform.translation.y = 0.0
+    #     t.transform.translation.z = 0.0
+    #     t.transform.rotation.x = quaternion[0]
+    #     t.transform.rotation.y = quaternion[1]
+    #     t.transform.rotation.z = quaternion[2]
+    #     t.transform.rotation.w = quaternion[3]
+    #     return t
 
     def publish_imu(self):
-        accel = self.get_accel_data()
+        current_time = time.time()
+        self.dt = current_time - self.last_time
+        self.last_time = current_time
         gyro = self.get_gyro_data()
 
-        accel_angles = self.calculate_angles(accel)
+        self.yaw_angle = (self.yaw_angle + gyro['z'] * self.dt) % 360
 
         # Apply Kalman filter
-        self.kalman_roll = self.kalman_filter(self.kalman_roll, gyro['x'], accel_angles['roll'], self.dt)
-        self.kalman_pitch = self.kalman_filter(self.kalman_pitch, gyro['y'], accel_angles['pitch'], self.dt)
-        self.kalman_yaw = self.kalman_filter(self.kalman_yaw, gyro['z'], accel_angles['yaw'], self.dt)
-        quaternion = quaternion_from_euler(self.kalman_roll['angle'], self.kalman_pitch['angle'], self.kalman_yaw['angle'])
+        # self.kalman_roll = self.kalman_filter(self.kalman_roll, gyro['x'], accel_angles['roll'], self.dt)
+        # self.kalman_pitch = self.kalman_filter(self.kalman_pitch, gyro['y'], accel_angles['pitch'], self.dt)
+        # self.kalman_yaw = self.kalman_filter(self.kalman_yaw, gyro['z'], accel_angles['yaw'], self.dt)
 
-        self.get_logger().info(f"Roll: {self.kalman_roll['angle']:.2f}° Pitch: {self.kalman_pitch['angle']:.2f}° Yaw: {self.kalman_yaw['angle']:.2f}°")
+        self.get_logger().info(f"Yaw: {self.yaw_angle:.2f}°")
     
 
-        imu = Imu()
-        imu.header.stamp = self.get_clock().now().to_msg()
-        imu.header.frame_id = "imu_link"  # Replace with your IMU frame
-
-        imu.orientation.x = quaternion[0]
-        imu.orientation.y = quaternion[1]
-        imu.orientation.z = quaternion[2]
-        imu.orientation.w = quaternion[3]
-
-        self.publisher.publish(imu)
+        yaw = Float32()
+        yaw.data = gyro['z']
+        
+        # #yeni kod buraya eklendi       
+        # imu_transform = self.get_transform()
+        # self.tf_broadcaster.sendTransform(imu_transform)
+     
+        self.publisher.publish(yaw)
 
     def read_raw_data(self, reg):
         """Read two bytes of raw data from the specified register."""

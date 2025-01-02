@@ -1,11 +1,10 @@
-
 import smbus
 import math
 import time
 import rclpy
 from collections import deque
 from rclpy.node import Node
-from sensor_msgs.msg import MagneticField
+from std_msgs.msg import Float32
 
 # Define I2C address and bus
 I2C_ADDRESS = 0x0D
@@ -26,7 +25,9 @@ class QMC5883LCompass(Node):
         self.magnetic_declination = 0.09744  # Magnetic declination adjustment
         self.heading_history = deque(maxlen = 20)
 
-        self.publisher = self.create_publisher(MagneticField, "/magnetometer/smoothed", 10)
+        self.initialHeading = float("-inf")
+
+        self.publisher = self.create_publisher(Float32, "/magnetometer/smoothed", 10)
         self.timer = self.create_timer(0.1, self.smoothed_heading)
 
     def add_heading(self, heading):
@@ -37,11 +38,8 @@ class QMC5883LCompass(Node):
         heading = self.get_azimuth()
         self.heading_history.append(heading)
 
-        magnetic_field = MagneticField()
-        magnetic_field.header.stamp = self.get_clock().now().to_msg()
-        magnetic_field.magnetic_field.x = sum(self.heading_history) / len(self.heading_history)
-        magnetic_field.magnetic_field.y = 0.0
-        magnetic_field.magnetic_field.z = 0.0
+        magnetic_field = Float32()
+        magnetic_field.data = sum(self.heading_history) / len(self.heading_history)
         
         self.publisher.publish(magnetic_field)
         
@@ -109,6 +107,25 @@ class QMC5883LCompass(Node):
         self.add_heading(heading)
         return heading
 
+    #yeni kod buraya eklendi
+    # def get_transform(self):
+    #     """Provide the magnetometer's transform as a TransformStamped."""
+    #     t = TransformStamped()
+    #     t.header.stamp = self.get_clock().now().to_msg()
+    #     t.header.frame_id = "base_link"  # Match robot's frame
+    #     t.child_frame_id = "magnetometer_link"
+
+    #     heading = sum(self.heading_history) / len(self.heading_history)
+    #     quaternion = quaternion_from_euler(0, 0, math.radians(heading))
+    #     t.transform.translation.x = 0.0
+    #     t.transform.translation.y = 0.0
+    #     t.transform.translation.z = 0.0
+    #     t.transform.rotation.x = quaternion[0]
+    #     t.transform.rotation.y = quaternion[1]
+    #     t.transform.rotation.z = quaternion[2]
+    #     t.transform.rotation.w = quaternion[3]
+    #     return t
+    
     def get_direction_name(self, azimuth):
         directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
                       "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]

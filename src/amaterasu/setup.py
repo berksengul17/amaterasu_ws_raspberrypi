@@ -23,7 +23,9 @@ setup(
             'mock_publisher=amaterasu.mock_publisher:main',
             'robot_controller=amaterasu.robot_controller:main',
             'magnetometer = amaterasu.magnetometer:main',
-            'imu = amaterasu.imu:main'
+            'imu = amaterasu.imu:main',
+            'imu_mag = amaterasu.imu_mag:main',
+            'fuse = amaterasu.fuse:main'
         ],
     },
 )

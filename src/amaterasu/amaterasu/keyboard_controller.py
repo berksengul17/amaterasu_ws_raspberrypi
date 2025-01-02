@@ -1,50 +1,26 @@
 import rclpy
-from rclpy.node import Node
 import RPi.GPIO as GPIO
-import pygame
 import time
+from rclpy.node import Node
+from MotorModule import Motor
+from sensor_msgs.msg import MagneticField
 
 class KeyboardController(Node):
     def __init__(self):
         super().__init__('keyboard_controller')
+        self.motor = Motor(17, 27, 22, 23, 24, 25)
 
-        # GPIO setup
-        GPIO.setmode(GPIO.BCM)
-        self.right_wheel_forward = 17
-        self.right_wheel_backward = 27
-        self.left_wheel_forward = 12
-        self.left_wheel_backward = 13
-
-        GPIO.setup(self.right_wheel_forward, GPIO.OUT)
-        GPIO.setup(self.right_wheel_backward, GPIO.OUT)
-        GPIO.setup(self.left_wheel_forward, GPIO.OUT)
-        GPIO.setup(self.left_wheel_backward, GPIO.OUT)
-
-        # Initialize Pygame for key input
-        pygame.init()
-        self.win = pygame.display.set_mode((100, 100))
-
-        # Motor speed control (PWM)
-        self.right_wheel_pwm = GPIO.PWM(self.right_wheel_forward, 100)
-        self.left_wheel_pwm = GPIO.PWM(self.left_wheel_forward, 100)
-        self.right_wheel_pwm.start(0)
-        self.left_wheel_pwm.start(0)
-        self.right_wheel_pwm.ChangeDutyCycle(80)
-        self.left_wheel_pwm.ChangeDutyCycle(80)
-
-        self.get_logger().info("Keyboard controller initialized. Use arrow keys to control the robot.")
-
-    def get_key(self, key_name):
-        """Check if a specific key is pressed."""
-        ans = False
-        for event in pygame.event.get():
-            pass  # Process events to avoid freezing
-        key_input = pygame.key.get_pressed()
-        my_key = getattr(pygame, f'K_{key_name}')
-        if key_input[my_key]:
-            ans = True
-        pygame.display.update()
-        return ans
+    # def get_key(self, key_name):
+    #     """Check if a specific key is pressed."""
+    #     ans = False
+    #     for event in pygame.event.get():
+    #         pass  # Process events to avoid freezing
+    #     key_input = pygame.key.get_pressed()
+    #     my_key = getattr(pygame, f'K_{key_name}')
+    #     if key_input[my_key]:
+    #         ans = True
+    #     pygame.display.update()
+    #     return ans
 
     def move_forward(self):
         self.get_logger().info("Moving forward...")
@@ -88,24 +64,25 @@ class KeyboardController(Node):
 
     def run(self):
         try:
-            while rclpy.ok():
-                if self.get_key('UP'):
-                    self.move_forward()
-                elif self.get_key('DOWN'):
-                    self.move_backward()
-                elif self.get_key('LEFT'):
-                    self.turn_left()
-                elif self.get_key('RIGHT'):
-                    self.turn_right()
-                else:
-                    self.stop_motors()
-                time.sleep(0.1)
+            self.motor.move(0.4, 0.2, 0.5)
+            # while rclpy.ok():
+            #     if self.get_key('UP'):
+            #         self.move_forward()
+            #     elif self.get_key('DOWN'):
+            #         self.move_backward()
+            #     elif self.get_key('LEFT'):
+            #         self.turn_left()
+            #     elif self.get_key('RIGHT'):
+            #         self.turn_right()
+            #     else:
+            #         self.stop_motors()
+            #     time.sleep(0.1)
         except KeyboardInterrupt:
             self.get_logger().info("Shutting down keyboard controller...")
         finally:
             self.stop_motors()
             GPIO.cleanup()
-            pygame.quit()
+            # pygame.quit()
 
 
 def main(args=None):
