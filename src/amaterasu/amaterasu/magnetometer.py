@@ -42,6 +42,21 @@ def quaternion_from_euler(ai, aj, ak):
 
     return q
 
+def transform_to_map_frame(x_raw, y_raw, z_raw, theta):
+    # Define the rotation matrix
+    R_map_mag = np.array([
+        [np.cos(theta), -np.sin(theta), 0],
+        [np.sin(theta), np.cos(theta), 0],
+        [0, 0, 1]
+    ])
+
+    # Magnetometer readings as a vector
+    v_mag = np.array([x_raw, y_raw, z_raw])
+
+    # Transform to the map frame
+    v_map = np.dot(R_map_mag, v_mag[:3])
+    return v_map
+
 class QMC5883LCompass(Node):
     def __init__(self):
         super().__init__("magnetometer")
@@ -50,8 +65,6 @@ class QMC5883LCompass(Node):
         self.scale = [1, 1, 1]
         self.magnetic_declination = 0.09744  # Magnetic declination adjustment
         self.heading_history = deque(maxlen = 20)
-
-        self.initialHeading = float("-inf")
 
         self.publisher = self.create_publisher(Float32, "/magnetometer/smoothed", 10)
         self.timer = self.create_timer(0.1, self.publish_heading)
@@ -104,19 +117,37 @@ class QMC5883LCompass(Node):
         self.magnetic_declination = degrees + minutes / 60.0
 
     def get_azimuth(self):
-        x, y, _ = self.read_raw_data()
+        x, y, z = self.read_raw_data()
         x = (x - self.offset[0]) / self.scale[0]
         y = (y - self.offset[1]) / self.scale[1]
 
-        # Calculate heading
+        # Calculate heading in the map frame
         heading = math.atan2(y, x) * (180 / math.pi)
         heading += self.magnetic_declination
+        
         if heading < 0:
             heading += 360
 
         # Add to history for smoothing
         self.add_heading(heading)
+        self.publish_tf(heading)
+
         return heading
+
+    # def get_azimuth(self):
+    #     x, y, _ = self.read_raw_data()
+    #     x = (x - self.offset[0]) / self.scale[0]
+    #     y = (y - self.offset[1]) / self.scale[1]
+
+    #     # Calculate heading
+    #     heading = math.atan2(y, x) * (180 / math.pi)
+    #     heading += self.magnetic_declination
+    #     if heading < 0:
+    #         heading += 360
+
+    #     # Add to history for smoothing
+    #     self.add_heading(heading)
+    #     return heading
     
     def add_heading(self, heading):
         """Add a new heading to the history."""
@@ -132,19 +163,15 @@ class QMC5883LCompass(Node):
         self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
         
         self.publisher.publish(magnetic_field)
-        self.publish_tf(heading)
 
-    def publish_tf(self, heading):
+    def publish_tf(self, z):
         """Provide the magnetometer's transform as a TransformStamped."""
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = "map"  # Match robot's frame
         t.child_frame_id = "magnetometer"
 
-        x, y, _ = self.read_raw_data()
-        x = (x - self.offset[0]) / self.scale[0]
-        y = (y - self.offset[1]) / self.scale[1]
-        quaternion = quaternion_from_euler(x, y, math.radians(heading))
+        quaternion = quaternion_from_euler(0, 0, z)
         t.transform.translation.x = 0.0
         t.transform.translation.y = 0.0
         t.transform.translation.z = 0.0
