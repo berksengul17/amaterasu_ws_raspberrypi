@@ -5,6 +5,9 @@ import rclpy
 from collections import deque
 from rclpy.node import Node
 from std_msgs.msg import Float32
+from tf2_ros import TransformBroadcaster
+from geometry_msgs.msg import TransformStamped
+import numpy as np
 
 # Define I2C address and bus
 I2C_ADDRESS = 0x0D
@@ -15,6 +18,29 @@ MODE_CONTINUOUS = 0x01
 OUTPUT_DATA_RATE_200HZ = 0x0C
 FULL_SCALE_8G = 0x10
 OVERSAMPLE_512 = 0x00
+
+def quaternion_from_euler(ai, aj, ak):
+    ai /= 2.0
+    aj /= 2.0
+    ak /= 2.0
+    ci = math.cos(ai)
+    si = math.sin(ai)
+    cj = math.cos(aj)
+    sj = math.sin(aj)
+    ck = math.cos(ak)
+    sk = math.sin(ak)
+    cc = ci*ck
+    cs = ci*sk
+    sc = si*ck
+    ss = si*sk
+
+    q = np.empty((4, ))
+    q[0] = cj*sc - sj*cs
+    q[1] = cj*ss + sj*cc
+    q[2] = cj*cs - sj*sc
+    q[3] = cj*cc + sj*ss
+
+    return q
 
 class QMC5883LCompass(Node):
     def __init__(self):
@@ -28,29 +54,16 @@ class QMC5883LCompass(Node):
         self.initialHeading = float("-inf")
 
         self.publisher = self.create_publisher(Float32, "/magnetometer/smoothed", 10)
-        self.timer = self.create_timer(0.1, self.smoothed_heading)
+        self.timer = self.create_timer(0.1, self.publish_heading)
 
-    def add_heading(self, heading):
-        """Add a new heading to the history."""
-        self.heading_history.append(heading)
-
-    def smoothed_heading(self):
-        heading = self.get_azimuth()
-        self.heading_history.append(heading)
-
-        magnetic_field = Float32()
-        magnetic_field.data = heading
-
-        self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
-        
-        self.publisher.publish(magnetic_field)
-        
-    def write_register(self, reg, value):
-        bus.write_byte_data(I2C_ADDRESS, reg, value)
+        self.tf_broadcaster = TransformBroadcaster(self)
 
     def init(self):
         self.write_register(0x0B, 0x01)  # Soft reset
         self.set_mode(MODE_CONTINUOUS, OUTPUT_DATA_RATE_200HZ, FULL_SCALE_8G, OVERSAMPLE_512)
+        
+    def write_register(self, reg, value):
+        bus.write_byte_data(I2C_ADDRESS, reg, value)
 
     def set_mode(self, mode, odr, rng, osr):
         self.write_register(0x09, mode | odr | rng | osr)
@@ -87,12 +100,8 @@ class QMC5883LCompass(Node):
         self.scale = [(max_vals[i] - min_vals[i]) / 2 for i in range(3)]
         print(f"Calibration complete: Offsets={self.offset}, Scales={self.scale}")
 
-    def normalize(self, raw_values):
-        return [(raw_values[i] - self.offset[i]) / self.scale[i] for i in range(3)]
-
     def set_magnetic_declination(self, degrees, minutes):
         self.magnetic_declination = degrees + minutes / 60.0
-
 
     def get_azimuth(self):
         x, y, _ = self.read_raw_data()
@@ -108,32 +117,43 @@ class QMC5883LCompass(Node):
         # Add to history for smoothing
         self.add_heading(heading)
         return heading
-
-    #yeni kod buraya eklendi
-    # def get_transform(self):
-    #     """Provide the magnetometer's transform as a TransformStamped."""
-    #     t = TransformStamped()
-    #     t.header.stamp = self.get_clock().now().to_msg()
-    #     t.header.frame_id = "base_link"  # Match robot's frame
-    #     t.child_frame_id = "magnetometer_link"
-
-    #     heading = sum(self.heading_history) / len(self.heading_history)
-    #     quaternion = quaternion_from_euler(0, 0, math.radians(heading))
-    #     t.transform.translation.x = 0.0
-    #     t.transform.translation.y = 0.0
-    #     t.transform.translation.z = 0.0
-    #     t.transform.rotation.x = quaternion[0]
-    #     t.transform.rotation.y = quaternion[1]
-    #     t.transform.rotation.z = quaternion[2]
-    #     t.transform.rotation.w = quaternion[3]
-    #     return t
     
-    def get_direction_name(self, azimuth):
-        directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-                      "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-        index = int((azimuth + 11.25) / 22.5) % 16
-        return directions[index]
+    def add_heading(self, heading):
+        """Add a new heading to the history."""
+        self.heading_history.append(heading)
 
+    def publish_heading(self):
+        heading = self.get_azimuth()
+        self.heading_history.append(heading)
+
+        magnetic_field = Float32()
+        magnetic_field.data = heading
+
+        self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
+        
+        self.publisher.publish(magnetic_field)
+        self.publish_tf(heading)
+
+    def publish_tf(self, heading):
+        """Provide the magnetometer's transform as a TransformStamped."""
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"  # Match robot's frame
+        t.child_frame_id = "magnetometer"
+
+        x, y, _ = self.read_raw_data()
+        x = (x - self.offset[0]) / self.scale[0]
+        y = (y - self.offset[1]) / self.scale[1]
+        quaternion = quaternion_from_euler(x, y, math.radians(heading))
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
+        t.transform.translation.z = 0.0
+        t.transform.rotation.x = quaternion[0]
+        t.transform.rotation.y = quaternion[1]
+        t.transform.rotation.z = quaternion[2]
+        t.transform.rotation.w = quaternion[3]
+
+        self.tf_broadcaster.sendTransform(t)
 
 def main(args=None):
     rclpy.init(args=args)

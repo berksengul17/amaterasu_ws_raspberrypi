@@ -69,7 +69,6 @@ class Kalman:
         """Normalize angle to the range -180° to 180°."""
         return (angle + 180) % 360 - 180
 
-
     @property
     def yaw(self):
         return self._yaw
