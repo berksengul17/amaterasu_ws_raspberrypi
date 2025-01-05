@@ -8,7 +8,6 @@ from tf2_ros import TransformBroadcaster, Buffer, TransformListener
 import math
 import time
 
-
 class RobotController(Node):
     def __init__(self):
         super().__init__('robot_controller')
@@ -177,8 +176,7 @@ class RobotController(Node):
         t.transform.rotation.w = math.cos(self.robot_yaw / 2)
         self.tf_broadcaster.sendTransform(t)
 
-    @staticmethod
-    def transform_point(x, y, z, transform):
+    def transform_point(self, x, y, z, transform):
         """
         Transform a point from one frame to another using a transform.
         """
@@ -189,8 +187,7 @@ class RobotController(Node):
         transformed_point.z = z + transform.transform.translation.z
         return transformed_point
 
-    @staticmethod
-    def create_marker(x, y):
+    def create_marker(self, x, y):
         """
         Create a marker for RViz visualization.
         """

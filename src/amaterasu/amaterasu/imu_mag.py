@@ -64,11 +64,11 @@ class SensorFusionNode(Node):
 
     def imu_callback(self, msg: Float32):
         """Handle IMU data."""
-        self.imu_data = msg.data
+        self.imu_data = msg.data # degree
 
     def mag_callback(self, msg: Float32):
         """Handle Magnetometer data."""
-        self.mag_heading = msg.data  # Use smoothed heading
+        self.mag_heading = msg.data  # degree
 
     def fuse_data(self):
         """Fuse IMU and Magnetometer data when both are available."""

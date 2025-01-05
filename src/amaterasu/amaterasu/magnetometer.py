@@ -63,7 +63,7 @@ class QMC5883LCompass(Node):
 
         self.offset = [0, 0, 0]
         self.scale = [1, 1, 1]
-        self.magnetic_declination = 0.09744  # Magnetic declination adjustment
+        self.magnetic_declination = 0.0  # Magnetic declination adjustment
         self.heading_history = deque(maxlen = 20)
 
         self.publisher = self.create_publisher(Float32, "/magnetometer/smoothed", 10)
@@ -122,9 +122,9 @@ class QMC5883LCompass(Node):
         y = (y - self.offset[1]) / self.scale[1]
 
         # Calculate heading in the map frame
-        heading = math.atan2(y, x) * (180 / math.pi)
-        heading += self.magnetic_declination
-        
+        heading = math.atan2(y, x) * (180 / math.pi) # degrees
+        heading += self.magnetic_declination # degrees
+
         if heading < 0:
             heading += 360
 
@@ -160,7 +160,7 @@ class QMC5883LCompass(Node):
         magnetic_field = Float32()
         magnetic_field.data = heading
 
-        self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
+        # self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
         
         self.publisher.publish(magnetic_field)
 
@@ -171,7 +171,7 @@ class QMC5883LCompass(Node):
         t.header.frame_id = "map"  # Match robot's frame
         t.child_frame_id = "magnetometer"
 
-        quaternion = quaternion_from_euler(0, 0, z)
+        quaternion = quaternion_from_euler(0, 0, math.radians(z))
         t.transform.translation.x = 0.0
         t.transform.translation.y = 0.0
         t.transform.translation.z = 0.0
@@ -189,7 +189,7 @@ def main(args=None):
     compass.init()
     compass.calibrate(duration=15)
     compass.set_magnetic_declination(5, 34)  # Adjust declination for your location
-
+    print(f"Magnetic declination: {compass.magnetic_declination}")
     rclpy.spin(compass)
 
     compass.destroy_node()

@@ -71,10 +71,10 @@ class MPU6050(Node):
 
         self.yaw_angle = (self.yaw_angle + gyro_z * self.dt) % 360
 
-        self.get_logger().info(f"Gyro z: {gyro_z:.2f}°")
+        # self.get_logger().info(f"Gyro z: {gyro_z:.2f}°")
     
         yaw = Float32()
-        yaw.data = gyro_z
+        yaw.data = gyro_z # degree/s
         
         # #yeni kod buraya eklendi       
         # imu_transform = self.get_transform()

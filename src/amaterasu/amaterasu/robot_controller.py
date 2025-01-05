@@ -2,356 +2,242 @@ import rclpy
 import math
 import time
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Float32
-from sensor_msgs.msg import Imu, CompressedImage, MagneticField
-from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
+from geometry_msgs.msg import Twist, PoseStamped, TransformStamped
 from nav_msgs.msg import Path
-from tf2_ros import TransformBroadcaster, Buffer, TransformListener
+from std_msgs.msg import Float32, Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
-import RPi.GPIO as GPIO
+from tf2_ros import TransformBroadcaster, Buffer, TransformListener
+from geometry_msgs.msg import Point
+from tf_transformations import quaternion_from_euler
 
 class RobotController(Node):
     def __init__(self):
         super().__init__('robot_controller')
 
-        # # GPIO setup
-        GPIO.setmode(GPIO.BCM)
-        self.EnaA = 17
-        self.In1A = 27
-        self.In2A = 22
-        self.EnaB = 23
-        self.In1B = 24
-        self.In2B = 25
+        # Subscriptions
+        self.imu_fused_sub = self.create_subscription(
+            Float32,
+            "/imu/fused",
+            self.imu_fused_callback,
+            10
+        )
+        self.bounding_box_sub = self.create_subscription(
+            Float32MultiArray,
+            '/ball/bounding_box',
+            self.bounding_box_callback,
+            10
+        )
 
-        GPIO.setup(self.EnaA,GPIO.OUT)
-        GPIO.setup(self.In1A,GPIO.OUT)
-        GPIO.setup(self.In2A,GPIO.OUT)
-        GPIO.setup(self.EnaB,GPIO.OUT)
-        GPIO.setup(self.In1B,GPIO.OUT)
-        GPIO.setup(self.In2B,GPIO.OUT)
+        # Publishers
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.cmd_vel_sub = self.create_subscription(Twist, '/cmd_vel', self.publish_robot_pose, 10)
+        self.path_publisher = self.create_publisher(Path, "/robot/trajectory", 10)
+        self.marker_publisher = self.create_publisher(MarkerArray, "/ball_markers", 10)
 
-        self.pwmA = GPIO.PWM(self.EnaA, 100)
-        self.pwmA.start(0)
-        self.pwmB = GPIO.PWM(self.EnaB, 100)
-        self.pwmB.start(0)
-
-        self.stop_motors()
-        self.tf_broadcaster = TransformBroadcaster(self)
-
-
-        # Subscribe to bounding box topic and IMU topic
-        self.ball_bounding_box_sub = self.create_subscription(Float32MultiArray, '/ball/bounding_box', self.bounding_box_callback, 10)
-        self.imu_mag_sub = self.create_subscription(Float32, "/imu/fused", self.imu_fused_callback, 10)
+        # TF2 Listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        ## şu an bunlarla bir şey yapamıyoz
-        #self.create_subscription(Float32MultiArray, "/robot/bounding_box", self.update_position, 10)
-        
-        # self.publisher = self.create_publisher(Pose, "/robot/position", 10)
-        self.marker_publisher = self.create_publisher(MarkerArray, "/ball_markers", 10)
-        self.path_publisher = self.create_publisher(Path, "/robot/trajectory", 10)
+        # Transform Broadcaster
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        # Robot state
+        self.robot_position = [0.0, 0.0]
+        self.robot_yaw = 0.0  # Current yaw from IMU
+        self.linear_velocity = 0.0
+        self.angular_velocity = 0.0
+
+        # Path initialization
         self.path = Path()
         self.path.header.frame_id = "map"
-        
-        # Robot state
-        self.ball_positions = []  # List of ball positions (calculated global coordinates)
-        self.robot_position = (0.01, 0.01)  # Robot starting position (x, y)
-        self.robot_yaw = 0.0  # Current yaw of the robot
 
-        self.grid_width = 128  # Platform width in meters
-        self.grid_height = 128  # Platform height in meters
+        # Platform and camera settings
+        self.grid_width = 128  # Platform width (meters)
+        self.grid_height = 128  # Platform height (meters)
         self.camera_resolution = (256, 256)  # Camera resolution (pixels)
 
-        # Motor speed adjustment for straight movement
-        self.right_motor_speed = 80  # Adjust this value for your motor setup
-        self.left_motor_speed = 80  # Adjust this value for your motor setup
+        # Ball positions
+        self.ball_positions = [[0.0, 0.0]]
 
-        self.tf_timer = self.create_timer(0.1, self.publish_transform)  # Broadcast every 100ms
+        self.last_time = time.time()
 
-        self.active_marker_ids = set()
+        # Timer for movement logic
+        self.create_timer(0.1, self.move_to_closest_ball)
+        self.create_timer(0.1, self.test)
+
+    def test(self):
+        marker_array = MarkerArray()
+        marker = self.create_marker(0.0, 0.0)
+        marker_array.markers.append(marker)
+        self.marker_publisher.publish(marker_array)
 
     def imu_fused_callback(self, msg):
+        """
+        Update the robot's yaw from IMU and magnetometer data.
+        """
         self.robot_yaw = msg.data
-        self.get_logger().info(f"Imu fused: {self.robot_yaw:.2f}")
 
     def bounding_box_callback(self, msg):
-            """Convert bounding boxes to global coordinates dynamically."""
-            self.get_logger().info(f"Ball bounding box: {msg}")
-            self.ball_positions = []  # Reset positions
-            marker_array = MarkerArray()
-            current_marker_ids = set()
+        """
+        Process bounding box data from the camera and transform to global coordinates.
+        """
+        self.ball_positions = []  # Clear previous positions
+        marker_array = MarkerArray()
 
-            for i in range(0, len(msg.data), 4):
-                x1, y1, x2, y2 = msg.data[i:i + 4]
-                center_x = (x1 + x2) / 2
-                center_y = (y1 + y2) / 2
+        for i in range(0, len(msg.data), 4):
+            x1, y1, x2, y2 = msg.data[i:i + 4]
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
 
-                # Convert to camera frame coordinates
-                camera_x = (center_x / self.camera_resolution[0]) * self.grid_width
-                camera_y = (center_y / self.camera_resolution[1]) * self.grid_height
-                camera_z = 0.0  # Assume objects are on the ground
+            # Convert to camera frame coordinates
+            camera_x = (center_x / self.camera_resolution[0]) * self.grid_width
+            camera_y = (center_y / self.camera_resolution[1]) * self.grid_height
+            camera_z = 0.0  # Assume objects are on the ground
 
-                # Transform to global coordinates
-                try:
-                    transform = self.tf_buffer.lookup_transform(
-                        "map",  # Target frame
-                        "camera_link",  # Source frame
-                        self.get_clock().now()
-                    )
-                    point_in_global = self.transform_point(camera_x, camera_y, camera_z, transform)
-                    self.ball_positions.append((point_in_global.x, point_in_global.y))
+            # Transform to global coordinates
+            try:
+                # transform = self.tf_buffer.lookup_transform(
+                #     "map",  # Target frame
+                #     "camera_link",  # Source frame
+                #     self.get_clock().now()
+                # )
+                # global_position = self.transform_point(camera_x, camera_y, camera_z, transform)
+                global_position_y = self.grid_height - camera_y
+                self.ball_positions.append((camera_x, global_position_y))
 
-                    # Create marker for visualization
-                    marker = self.create_marker(point_in_global.x, point_in_global.y)
-                    marker_array.markers.append(marker)
-                    current_marker_ids.add(marker.id)
+                # Add a marker for visualization
+                marker = self.create_marker(camera_x, global_position_y)
+                marker_array.markers.append(marker)
 
-                except tf2_ros.LookupException:
-                    self.get_logger().error("Transform unavailable for camera frame!")
+            except Exception as e:
+                self.get_logger().error(f"Transform failed: {e}")
 
-            self.marker_publisher.publish(marker_array)
-            self.get_logger().info(f"Ball positions: {self.ball_positions}")
+        # Publish markers
+        self.marker_publisher.publish(marker_array)
+        # self.get_logger().info(f"Ball positions in global frame: {self.ball_positions}")
 
-    #yeni kod buraya eklendi
-    @staticmethod
-    def transform_point(x, y, z, transform):
-        """Transform a point using a TransformStamped."""
-        point = PoseStamped()
-        point.pose.position.x = x
-        point.pose.position.y = y
-        point.pose.position.z = z
-        transformed_point = tf2_geometry_msgs.do_transform_pose(point, transform)
-        return transformed_point.pose.position
-
-    def update_orientation(self, msg):
-        """Update the robot's orientation from IMU data."""
-        # Convert quaternion to Euler angles
-        x = msg.orientation.x
-        y = msg.orientation.y
-        z = msg.orientation.z
-        w = msg.orientation.w
-
-        roll, pitch, yaw = tf_transformations.euler_from_quaternion([x, y, z, w])
-        self.current_orientation = (roll, pitch, yaw)
-        self.get_logger().info(f"Orientation updated: Roll={roll}, Pitch={pitch}, Yaw={yaw}")
-
-    # def update_heading(self, msg):
-    #     """Update the robot's heading from Magnetometer data."""
-    #     self.current_heading = msg.magnetic_field.x
-    #     self.get_logger().info(f"Heading updated: {self.current_heading:.2f}°")
-
-    def move_to_ball(self):
-        """Use heading and orientation to navigate to the ball."""
+    def move_to_closest_ball(self):
+        """
+        Move the robot toward the closest ball.
+        """
         if not self.ball_positions:
-            self.get_logger().info("No balls to move to.")
-            return
-
-        target_ball = self.ball_positions[0]  # Closest ball logic remains the same
-        yaw_error = self.calculate_yaw_error(target_ball)
-
-        # Use IMU orientation for smoother yaw adjustments
-        if abs(yaw_error) > 0.1:
-            self.adjust_yaw(yaw_error)
-        else:
-            self.move_forward()
-
-    def calculate_yaw_error(self, target_pos):
-        """Calculate yaw error between robot and the target."""
-        dx = target_pos[0] - self.robot_position[0]
-        dy = target_pos[1] - self.robot_position[1]
-        desired_yaw = math.atan2(dy, dx)
-        yaw_error = desired_yaw - self.robot_yaw
-        return (yaw_error + math.pi) % (2 * math.pi) - math.pi  # Normalize to [-π, π]
-
-    def move_to_ball(self):
-        """Move the robot to the closest ball."""
-        if not self.ball_positions:
-            self.get_logger().info("No more balls to extinguish.")
-            self.stop_motors()
+            # self.get_logger().info("No balls detected.")
             return
 
         # Sort balls by distance
         self.ball_positions.sort(key=lambda pos: self.distance_to_ball(pos))
         target_ball = self.ball_positions[0]
 
-        # Align yaw
+        # Calculate yaw error
         yaw_error = self.calculate_yaw_error(target_ball)
-        if abs(yaw_error) > 0.1:  # Adjust yaw if error is significant
-            self.adjust_yaw(yaw_error)
-        else:
-            # Move forward if aligned
+
+        twist_msg = Twist()
+
+        self.get_logger().info(f"Yaw error: {yaw_error}")
+        if abs(yaw_error) > 10:  # If yaw error is significant, adjust yaw
+            twist_msg.angular.z = 0.2 if yaw_error > 0 else -0.2
+        else:  # Otherwise, move forward
             distance = self.distance_to_ball(target_ball)
-            if distance > 10:  # Stop if close enough to the ball
-                self.move_forward()
-            else:
+            if distance > 1.0:  # Move if not close enough
+                twist_msg.linear.x = 0.5
+            else:  # Extinguish ball if close
                 self.extinguish_ball(target_ball)
 
-    def adjust_yaw(self, yaw_error):
-        """Adjust the robot's yaw using PWM for smoother control."""
-        # Duration of turning
-        turn_duration = 0.2  # Adjust based on your robot's turn speed
-        angular_speed = 0.5  # Estimated angular speed in rad/s (calibrated for your motors)
+        self.cmd_vel_pub.publish(twist_msg)
+        self.publish_robot_pose(twist_msg)
 
-        # Calculate the change in yaw
-        delta_yaw = angular_speed * turn_duration if yaw_error > 0 else -angular_speed * turn_duration
-
-        # Update the robot's yaw
-        self.robot_yaw += delta_yaw
-        self.robot_yaw = (self.robot_yaw + math.pi) % (2 * math.pi) - math.pi  # Normalize to [-π, π]
-
-        self.get_logger().info(f"Updated yaw: {self.robot_yaw}")
-
-        self.get_logger().info(f"Adjusting yaw: {yaw_error}")
-        if yaw_error > 0:
-            # Turn right
-            self.right_wheel_pwm.ChangeDutyCycle(60)  # Slow down right wheel
-            self.left_wheel_pwm.ChangeDutyCycle(80)  # Speed up left wheel
-        else:
-            # Turn left
-            self.right_wheel_pwm.ChangeDutyCycle(80)  # Speed up right wheel
-            self.left_wheel_pwm.ChangeDutyCycle(60)  # Slow down left wheel
-
-        time.sleep(0.2)  # Adjust based on yaw error
-        self.stop_motors()
-
-    def move_forward(self):
-        """Move the robot forward with calibrated speeds."""
-        move_duration = 0.2  # Adjust duration as needed
-        linear_speed = 10  # Estimated linear speed in m/s (calibrated for your motors)
-
-        # Calculate the distance moved
-        distance = linear_speed * move_duration
-
-        # Update the robot's position based on the current yaw
-        self.robot_position = (
-            self.robot_position[0] + distance * math.cos(self.robot_yaw),
-            self.robot_position[1] + distance * math.sin(self.robot_yaw),
-        )
-
-        # Create a PoseStamped message for the new position
-        pose = PoseStamped()
-        pose.header.frame_id = "map"
-        pose.header.stamp = self.get_clock().now().to_msg()
-        pose.pose.position.x = self.robot_position[0]
-        pose.pose.position.y = self.robot_position[1]
-        pose.pose.position.z = 0.0
-        pose.pose.orientation.x = 0.0
-        pose.pose.orientation.y = 0.0
-        pose.pose.orientation.z = math.sin(self.robot_yaw / 2)
-        pose.pose.orientation.w = math.cos(self.robot_yaw / 2)
-
-        # Append to the path
-        self.path.poses.append(pose)
-
-        # Publish the updated path
-        self.path.header.stamp = self.get_clock().now().to_msg()
-        self.path_publisher.publish(self.path)
-
-        # Publish the robot's TF
-        #self.publish_transform()
-
-        # Log the updated position
-        self.get_logger().info(f"Updated position: {self.robot_position}")
-
-        GPIO.output(self.right_wheel_backward, False)  # Ensure backward is off
-        GPIO.output(self.left_wheel_backward, False)
-
-        self.right_wheel_pwm.ChangeDutyCycle(self.right_motor_speed)
-        self.left_wheel_pwm.ChangeDutyCycle(self.left_motor_speed)
-
-        # Simulate motion
-        time.sleep(0.2)  # Adjust duration as needed
-        self.stop_motors()
-
-    def publish_transform(self):
-        """Publish the robot's transform for visualization in RViz2."""
-        t = TransformStamped()
-
-        # Set the frame names
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = "map"  # Reference frame
-        t.child_frame_id = "base_link"  # Robot's frame
-
-        # Set the robot's position
-        t.transform.translation.x = self.robot_position[0]
-        t.transform.translation.y = self.robot_position[1]
-        t.transform.translation.z = 0.0  # Assume 2D motion
-
-        # Set the robot's orientation
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = math.sin(self.robot_yaw / 2)
-        t.transform.rotation.w = math.cos(self.robot_yaw / 2)
-
-        # Broadcast the transform
-        self.tf_broadcaster.sendTransform(t)
-
-    # def move_forward(self):
-    #     """Move the robot forward with calibrated speeds."""
-    #     # Duration of forward motion
-    #     move_duration = 0.2  # Adjust duration as needed
-    #     linear_speed = 10  # Estimated linear speed in m/s (calibrated for your motors)
-
-    #     # Calculate the distance moved
-    #     distance = linear_speed * move_duration
-
-    #     # Update the robot's position based on the current yaw
-    #     self.robot_position = (
-    #         self.robot_position[0] + distance * math.cos(self.robot_yaw),
-    #         self.robot_position[1] + distance * math.sin(self.robot_yaw),
-    #     )
-
-    #     pos = Pose()
-    #     pos.position.x = self.robot_position[0]
-    #     pos.position.y = self.robot_position[1]
-
-    #     self.publisher.publish(pos)
-
-    #     self.get_logger().info(f"Updated position: {self.robot_position}")
-
-    #     # GPIO.output(self.right_wheel_backward, False)  # Ensure backward is off
-    #     # GPIO.output(self.left_wheel_backward, False)
-
-    #     # self.right_wheel_pwm.ChangeDutyCycle(self.right_motor_speed)
-    #     # self.left_wheel_pwm.ChangeDutyCycle(self.left_motor_speed)
-
-    #     time.sleep(0.2)  # Adjust duration as needed
-    #     self.stop_motors()
+    def calculate_yaw_error(self, target_pos):
+        """
+        Calculate yaw error between robot and the target position.
+        """
+        dx = target_pos[0] - self.robot_position[0]
+        dy = target_pos[1] - self.robot_position[1]
+        desired_yaw = math.degrees(math.atan2(dy, dx))
+        yaw_error = desired_yaw - self.robot_yaw
+        self.get_logger().info(f"Not normalized: {desired_yaw} - {self.robot_yaw} - {yaw_error}")
+        return (yaw_error + 180) % (360) - 180  # Normalize to [-π, π]
 
     def extinguish_ball(self, ball):
-        """Simulate extinguishing a ball."""
-        self.get_logger().info(f"Extinguishing ball at: {ball}")
-        self.stop_motors()
-        time.sleep(2)  # Simulate extinguishing process
+        """
+        Simulate extinguishing a ball.
+        """
+        # self.get_logger().info(f"Extinguishing ball at position: {ball}")
+        time.sleep(2)  # Simulate extinguishing time
         self.ball_positions.remove(ball)
 
-    def stop_motors(self):
-        """Stop all motors."""
-        pass
-        # self.right_wheel_pwm.ChangeDutyCycle(0)
-        # self.left_wheel_pwm.ChangeDutyCycle(0)
+        # Stop movement after extinguishing
+        twist_msg = Twist()
+        self.cmd_vel_pub.publish(twist_msg)
 
     def distance_to_ball(self, ball_pos):
-        """Calculate distance to a ball."""
+        """
+        Calculate the Euclidean distance to a ball.
+        """
         dx = ball_pos[0] - self.robot_position[0]
         dy = ball_pos[1] - self.robot_position[1]
         return math.sqrt(dx**2 + dy**2)
+    
+    def publish_robot_pose(self, twist: Twist):
+        current_time = time.time()
+        dt = current_time - self.last_time
+        self.last_Time = current_time
+
+        self.robot_position[0] += twist.linear.x * dt * math.cos(math.radians(self.robot_yaw))
+        self.robot_position[1] += twist.linear.x * dt * math.sin(math.radians(self.robot_yaw))
+
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = "map"
+        t.child_frame_id = "robot"
+        t.transform.translation.x = self.robot_position[0]
+        t.transform.translation.y = self.robot_position[1]
+        q = quaternion_from_euler(0, 0, math.radians(self.robot_yaw))
+        t.transform.rotation.x = q[0]
+        t.transform.rotation.y = q[1]
+        t.transform.rotation.z = q[2]
+        t.transform.rotation.w = q[3]
+        self.tf_broadcaster.sendTransform(t)        
+
+    def transform_point(self, x, y, z, transform):
+        """
+        Transform a point from one frame to another using a transform.
+        """
+        transformed_point = Point()
+        transformed_point.x = x + transform.transform.translation.x
+        transformed_point.y = y + transform.transform.translation.y
+        transformed_point.z = z + transform.transform.translation.z
+        return transformed_point
+
+    def create_marker(self, x, y):
+        """
+        Create a marker for RViz visualization.
+        """
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = x
+        marker.pose.position.y = y
+        marker.pose.position.z = 0.0
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        return marker
+
 
 def main(args=None):
     rclpy.init(args=args)
     robot_controller = RobotController()
 
     try:
-#        rclpy.spin(robot_controller)
-        while rclpy.ok():
-            #robot_controller.move_to_ball()
-            rclpy.spin_once(robot_controller, timeout_sec=0.1)
+        rclpy.spin(robot_controller)
     except KeyboardInterrupt:
         robot_controller.get_logger().info("Shutting down robot controller...")
     finally:
-        robot_controller.stop_motors()
-        # GPIO.cleanup()
         robot_controller.destroy_node()
         rclpy.shutdown()
 
