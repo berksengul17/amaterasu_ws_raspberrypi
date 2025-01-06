@@ -63,7 +63,7 @@ class RobotController(Node):
 
         # Timer for movement logic
         self.create_timer(0.1, self.move_to_closest_ball)
-        self.create_timer(0.1, self.test)
+        #self.create_timer(0.1, self.test)
 
     def test(self):
         marker_array = MarkerArray()
@@ -135,11 +135,11 @@ class RobotController(Node):
 
         self.get_logger().info(f"Yaw error: {yaw_error}")
         if abs(yaw_error) > 10:  # If yaw error is significant, adjust yaw
-            twist_msg.angular.z = 0.2 if yaw_error > 0 else -0.2
+            twist_msg.angular.z = 0.8 if yaw_error > 0 else -0.8
         else:  # Otherwise, move forward
             distance = self.distance_to_ball(target_ball)
             if distance > 1.0:  # Move if not close enough
-                twist_msg.linear.x = 0.5
+                twist_msg.linear.x = 5.0
             else:  # Extinguish ball if close
                 self.extinguish_ball(target_ball)
 
@@ -228,6 +228,11 @@ class RobotController(Node):
         marker.color.b = 0.0
         return marker
 
+    def stop(self):
+        twist_msg = Twist()
+        twist_msg.linear.x = 0.0
+        twist_msg.angular.z = 0.0
+        self.cmd_vel_pub.publish(twist_msg)
 
 def main(args=None):
     rclpy.init(args=args)
@@ -238,6 +243,7 @@ def main(args=None):
     except KeyboardInterrupt:
         robot_controller.get_logger().info("Shutting down robot controller...")
     finally:
+        robot_controller.stop()
         robot_controller.destroy_node()
         rclpy.shutdown()
 

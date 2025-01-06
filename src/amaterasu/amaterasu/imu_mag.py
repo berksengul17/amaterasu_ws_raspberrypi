@@ -84,7 +84,7 @@ class SensorFusionNode(Node):
 
         # Debug output
         self.get_logger().info(
-            f"Fused Yaw: {self.kalman.yaw:.2f}°"
+            f"Fused Yaw: {self.kalman.yaw:.2f}° Imu: {self.imu_data:.2f} Mag: {self.mag_heading:.2f}"
         )
         
         pub_yaw = Float32()
