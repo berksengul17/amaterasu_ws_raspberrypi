@@ -28,7 +28,8 @@ setup(
             'magnetometer = amaterasu.magnetometer:main',
             'imu = amaterasu.imu:main',
             'imu_mag = amaterasu.imu_mag:main',
-            'fuse = amaterasu.fuse:main'
+            'fuse = amaterasu.fuse:main',
+            'compass = amaterasu.qmc5883l:main'
         ],
     },
 )

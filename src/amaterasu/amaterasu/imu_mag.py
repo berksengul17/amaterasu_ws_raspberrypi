@@ -5,6 +5,7 @@ from std_msgs.msg import Float32
 from amaterasu.kalman import Kalman
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
+from sensor_msgs.msg import Imu
 import numpy as np
 
 def quaternion_from_euler(ai, aj, ak):
@@ -37,17 +38,17 @@ class SensorFusionNode(Node):
 
         # Subscribers
         self.imu_subscription = self.create_subscription(
-            Float32,
-            '/imu/raw_data',
+            Imu,
+            '/imu',
             self.imu_callback,
             10
         )
-        self.mag_subscription = self.create_subscription(
-            Float32,
-            '/magnetometer/smoothed',
-            self.mag_callback,
-            10
-        )
+        # self.mag_subscription = self.create_subscription(
+        #     Float32,
+        #     '/magnetometer/smoothed',
+        #     self.mag_callback,
+        #     10
+        # )
 
         # Publisher
         self.fused_publisher = self.create_publisher(Float32, '/imu/fused', 10)
@@ -61,10 +62,11 @@ class SensorFusionNode(Node):
         self.timer = self.create_timer(0.1, self.fuse_data)
 
         self.tf_broadcaster = TransformBroadcaster(self)
+        self.yaw_angle = 0
 
-    def imu_callback(self, msg: Float32):
+    def imu_callback(self, msg: Imu):
         """Handle IMU data."""
-        self.imu_data = msg.data # degree
+        self.imu_data = msg.angular_velocity.z # degree
 
     def mag_callback(self, msg: Float32):
         """Handle Magnetometer data."""
@@ -72,19 +74,20 @@ class SensorFusionNode(Node):
 
     def fuse_data(self):
         """Fuse IMU and Magnetometer data when both are available."""
-        if self.imu_data is None or self.mag_heading is None:
+        if self.imu_data is None:
             return
 
         # Time step
         current_time = self.get_clock().now()
         dt = (current_time - self.last_time).nanoseconds / 1e9
         self.last_time = current_time
+        self.yaw_angle = (self.yaw_angle + self.imu_data * dt) % 360
 
-        self.kalman.update_yaw_angle(self.imu_data, dt, self.mag_heading)
+        self.kalman.update_yaw_angle(self.imu_data, dt, self.yaw_angle)
 
         # Debug output
         self.get_logger().info(
-            f"Fused Yaw: {self.kalman.yaw:.2f}° Imu: {self.imu_data:.2f} Mag: {self.mag_heading:.2f}"
+            f"Fused Yaw: {self.kalman.yaw:.2f}°"
         )
         
         pub_yaw = Float32()

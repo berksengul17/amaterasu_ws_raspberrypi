@@ -11,12 +11,12 @@ def generate_launch_description():
             output='screen'
         ),
 
-        Node(
-            package='amaterasu',
-            executable='imu',
-            name='imu',
-            output='screen'
-        ),
+        # Node(
+        #     package='amaterasu',
+        #     executable='imu',
+        #     name='imu',
+        #     output='screen'
+        # ),
 
         Node(
             package='amaterasu',

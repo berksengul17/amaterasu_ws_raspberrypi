@@ -38,7 +38,7 @@ class RpiDriveController : public rclcpp::Node
 
         const double m_wheelRadius = m_wheelDiameter / 2;
         const double m_circumference_of_wheel = 2 * M_PI * m_wheelRadius;
-        const double m_maxSpeed = (m_circumference_of_wheel * m_motorRpm) / 60;   // m/sec
+        const double m_maxSpeed = (m_circumference_of_wheel * m_motorRpm) / 60;   // 0.85 m/sec
 
         /* PWM frequency is 100 Hz */ 
         const unsigned int pwmFrequency = 100;
