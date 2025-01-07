@@ -25,8 +25,8 @@ class RpiDriveController : public rclcpp::Node
         /* Constants */ 
         const unsigned int m_leftEn = 17;  // GPIO pin number
         const unsigned int m_rightEn = 23; // GPIO pin number
-        const unsigned int m_leftForward = 27; // GPIO pin number
-        const unsigned int m_leftBackward = 22; // GPIO pin number
+        const unsigned int m_leftForward = 22; // GPIO pin number
+        const unsigned int m_leftBackward = 27; // GPIO pin number
         const unsigned int m_rightForward = 24; // GPIO pin number
         const unsigned int m_rightBackward = 25; // GPIO pin number
 
@@ -160,21 +160,21 @@ class RpiDriveController : public rclcpp::Node
         /**
          * @brief: Move Left 
         */
-        void left(double left_speed, double right_speed)
+        void left(double left_speed)
         {
             if (m_isConnectionOk >= 0) 
             { 
                 double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
-                double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
+                // double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
           
                 // Set PWM duty cycle for the GPIO pin
-                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM);
-                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM / 3.0);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, lspeedPWM);
 
                 /* Writing The Requested Pin Data */
-                gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_LOW);
+                gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_HIGH);
                 gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_HIGH);
-                gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_HIGH);
+                gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_LOW);
                 gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_LOW);
             }
         }
@@ -182,22 +182,23 @@ class RpiDriveController : public rclcpp::Node
         /**
          * @brief: Move Right 
         */
-        void right(double left_speed, double right_speed)
+        void right(double right_speed)
         {
             if (m_isConnectionOk >= 0) 
             {
-                double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
+                // double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
                 double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
           
                 // Set PWM duty cycle for the GPIO pin
-                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM);
-                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM);
+                // 28, 12
+                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, rspeedPWM);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM / 3.0);
 
                 /* Writing The Requested Pin Data */
                 gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_HIGH);
-                gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_LOW);
+                gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_HIGH);
                 gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_LOW);
-                gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_HIGH);
+                gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_LOW);
             }
         }
 

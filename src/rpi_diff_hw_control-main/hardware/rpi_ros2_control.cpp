@@ -307,11 +307,11 @@ namespace rpi_diff_hw_control
         }
         else if (left_velocity < 0.0 && right_velocity > 0.0)
         {
-            m_rpiDriveObj.left(std::abs(left_velocity), std::abs(right_velocity)); // Move left method
+            m_rpiDriveObj.left(std::abs(left_velocity)); // Move left method
         }
         else if (left_velocity > 0.0 && right_velocity < 0.0)
         {
-            m_rpiDriveObj.right(std::abs(left_velocity), std::abs(right_velocity)); // Move right method
+            m_rpiDriveObj.right(std::abs(right_velocity)); // Move right method
         }
         else
         {

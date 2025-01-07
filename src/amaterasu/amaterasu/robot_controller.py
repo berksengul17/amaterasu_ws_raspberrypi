@@ -14,6 +14,16 @@ class RobotController(Node):
     def __init__(self):
         super().__init__('robot_controller')
 
+        # Platform and camera settings
+        self.grid_width = 128  # Platform width (meters)
+        self.grid_height = 128  # Platform height (meters)
+        self.camera_resolution = (256, 256)  # Camera resolution (pixels)
+
+        # Ball positions
+        self.ball_positions = [[2.0, 2.0]]
+
+        self.last_time = time.time()
+
         # Subscriptions
         self.imu_fused_sub = self.create_subscription(
             Float32,
@@ -50,16 +60,6 @@ class RobotController(Node):
         # Path initialization
         self.path = Path()
         self.path.header.frame_id = "map"
-
-        # Platform and camera settings
-        self.grid_width = 128  # Platform width (meters)
-        self.grid_height = 128  # Platform height (meters)
-        self.camera_resolution = (256, 256)  # Camera resolution (pixels)
-
-        # Ball positions
-        self.ball_positions = [[2.0, 2.0]]
-
-        self.last_time = time.time()
 
         # Timer for movement logic
         self.create_timer(0.1, self.move_to_closest_ball)
@@ -121,7 +121,6 @@ class RobotController(Node):
         Move the robot toward the closest ball.
         """
         if not self.ball_positions:
-            # self.get_logger().info("No balls detected.")
             return
 
         # Sort balls by distance
@@ -133,26 +132,24 @@ class RobotController(Node):
 
         twist_msg = Twist()
 
-        twist_msg.angular.z = 0.75 * math.radians(yaw_error)
-        self.cmd_vel_pub.publish(twist_msg)
+        if abs(yaw_error) > 80:  # If yaw error is significant, adjust yaw
+            twist_msg.angular.z = 0.8 if yaw_error > 0 else -0.8
+        else:  # Otherwise, move forward
+            distance = self.distance_to_ball(target_ball)
+            if distance > 1.0:  # Move if not close enough
+                twist_msg.linear.x = 5.0
+            else:  # Extinguish ball if close
+                self.extinguish_ball(target_ball)
 
         self.get_logger().info(f"Yaw error: {yaw_error}, Angular.z: {twist_msg.angular.z}")
 
-        # if abs(yaw_error) <= 5:  # Start moving forward when alignment is nearly correct
-        #     twist_msg.angular.z = 0.0
-        #     distance = self.distance_to_ball(target_ball)
-        #     if distance > 0.1:  # Move forward if not close enough
-        #         twist_msg.linear.x = 0.6
-        #     else:  # Extinguish ball if close
-        #         self.extinguish_ball(target_ball)
-
+        self.cmd_vel_pub.publish(twist_msg)
         self.publish_robot_pose(twist_msg)
 
     def calculate_angular_z(self, yaw_error):
         k = 0.04  # Scaling constant, adjust based on robot's behavior
         angular_z = math.copysign(min(0.8, max(0.3, abs(yaw_error) * k)), yaw_error)
         return angular_z
-
 
     def calculate_yaw_error(self, target_pos):
         """
@@ -169,7 +166,6 @@ class RobotController(Node):
         """
         Simulate extinguishing a ball.
         """
-        # self.get_logger().info(f"Extinguishing ball at position: {ball}")
         time.sleep(2)  # Simulate extinguishing time
         self.ball_positions.remove(ball)
 

@@ -95,7 +95,7 @@ class QMC5883LCompass(Node):
         return value
 
     def calibrate(self, duration=10):
-        print("Calibrating... Move the sensor in all directions.")
+        self.get_logger().info("Calibrating... Move the sensor in all directions.")
         start_time = time.time()
         min_vals = [float('inf')] * 3
         max_vals = [float('-inf')] * 3
@@ -111,7 +111,7 @@ class QMC5883LCompass(Node):
 
         self.offset = [(max_vals[i] + min_vals[i]) / 2 for i in range(3)]
         self.scale = [(max_vals[i] - min_vals[i]) / 2 for i in range(3)]
-        print(f"Calibration complete: Offsets={self.offset}, Scales={self.scale}")
+        self.get_logger().info(f"Calibration complete: Offsets={self.offset}, Scales={self.scale}")
 
     def set_magnetic_declination(self, degrees, minutes):
         self.magnetic_declination = degrees + minutes / 60.0
@@ -123,31 +123,20 @@ class QMC5883LCompass(Node):
 
         # Calculate heading in the map frame
         heading = math.atan2(y, x) * (180 / math.pi) # degrees
-        heading += self.magnetic_declination # degrees
-
         if heading < 0:
-            heading += 360
+                heading += 360.0
+        heading += self.magnetic_declination
+
+        if heading < 0.0:
+            heading += 360.0
+        elif heading >= 360.0:
+            heading -= 360.0
 
         # Add to history for smoothing
         self.add_heading(heading)
         self.publish_tf(heading)
 
         return heading
-
-    # def get_azimuth(self):
-    #     x, y, _ = self.read_raw_data()
-    #     x = (x - self.offset[0]) / self.scale[0]
-    #     y = (y - self.offset[1]) / self.scale[1]
-
-    #     # Calculate heading
-    #     heading = math.atan2(y, x) * (180 / math.pi)
-    #     heading += self.magnetic_declination
-    #     if heading < 0:
-    #         heading += 360
-
-    #     # Add to history for smoothing
-    #     self.add_heading(heading)
-    #     return heading
     
     def add_heading(self, heading):
         """Add a new heading to the history."""
@@ -189,7 +178,7 @@ def main(args=None):
     compass.init()
     compass.calibrate(duration=15)
     compass.set_magnetic_declination(5, 34)  # Adjust declination for your location
-    print(f"Magnetic declination: {compass.magnetic_declination}")
+    compass.get_logger().info(f"Magnetic declination: {compass.magnetic_declination}")
     rclpy.spin(compass)
 
     compass.destroy_node()
