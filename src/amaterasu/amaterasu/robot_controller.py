@@ -25,22 +25,33 @@ class RobotController(Node):
         self.last_time = time.time()
 
         # Subscriptions
-        self.imu_fused_sub = self.create_subscription(
+        self.create_subscription(
             Float32,
             "/imu/fused",
             self.imu_fused_callback,
             10
         )
-        self.bounding_box_sub = self.create_subscription(
+        self.create_subscription(
             Float32MultiArray,
             '/ball/bounding_box',
             self.bounding_box_callback,
             10
         )
+        self.create_subscription(
+            Twist,
+            '/cmd_vel',
+            self.publish_robot_pose, 
+            10
+        )
+        self.create_subscription(
+            Float32MultiArray,
+            '/robot/initial_position',
+            self.set_initial_robot_position,
+            10
+        )
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.cmd_vel_sub = self.create_subscription(Twist, '/cmd_vel', self.publish_robot_pose, 10)
         self.path_publisher = self.create_publisher(Path, "/robot/trajectory", 10)
         self.marker_publisher = self.create_publisher(MarkerArray, "/ball_markers", 10)
 
@@ -52,7 +63,7 @@ class RobotController(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         # Robot state
-        self.robot_position = [0.0, 0.0]
+        self.robot_position = None
         self.robot_yaw = 0.0  # Current yaw from IMU
         self.linear_velocity = 0.0
         self.angular_velocity = 0.0
@@ -76,6 +87,23 @@ class RobotController(Node):
         Update the robot's yaw from IMU and magnetometer data.
         """
         self.robot_yaw = msg.data
+
+    def set_initial_robot_position(self, msg):
+        """
+        Set the initial position of the robot using the bounding box received.
+        """
+        if self.robot_position is None:
+            # Convert bounding box [x1, y1, x2, y2] to robot position (center of the bounding box)
+            x1, y1, x2, y2 = msg.data
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+
+            # Scale coordinates to fit grid dimensions (adjust as needed)
+            self.robot_position = [
+                (center_x / self.grid_width) * self.grid_width,
+                (center_y / self.grid_height) * self.grid_height
+            ]
+            self.get_logger().info(f"Robot's initial position set to: {self.robot_position}")
 
     def bounding_box_callback(self, msg):
         """
@@ -120,7 +148,12 @@ class RobotController(Node):
         """
         Move the robot toward the closest ball.
         """
+        if not self.robot_position:
+            self.get_logger().warning("Robot position not set. Waiting for initial position...")
+            return
+
         if not self.ball_positions:
+            self.get_logger().info("No balls detected to move toward.")
             return
 
         # Sort balls by distance
@@ -179,15 +212,33 @@ class RobotController(Node):
         """
         dx = ball_pos[0] - self.robot_position[0]
         dy = ball_pos[1] - self.robot_position[1]
-        return math.sqrt(dx**2 + dy**2)
-    
+        return math.sqrt(dx**2 + dy**2)   
+
+    def transform_point(self, x, y, z, transform):
+        """
+        Transform a point from one frame to another using a transform.
+        """
+        transformed_point = Point()
+        transformed_point.x = x + transform.transform.translation.x
+        transformed_point.y = y + transform.transform.translation.y
+        transformed_point.z = z + transform.transform.translation.z
+        return transformed_point
+
+    def stop(self):
+        twist_msg = Twist()
+        twist_msg.linear.x = 0.0
+        twist_msg.angular.z = 0.0
+        self.cmd_vel_pub.publish(twist_msg)
+
+##################################### RViz Codes #####################################
+        
     def publish_robot_pose(self, twist: Twist):
         current_time = time.time()
         dt = current_time - self.last_time
         self.last_Time = current_time
 
-        # self.robot_position[0] += twist.linear.x * dt * math.cos(math.radians(self.robot_yaw))
-        # self.robot_position[1] += twist.linear.x * dt * math.sin(math.radians(self.robot_yaw))
+        self.robot_position[0] += twist.linear.x * dt * math.cos(math.radians(self.robot_yaw))
+        self.robot_position[1] += twist.linear.x * dt * math.sin(math.radians(self.robot_yaw))
 
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
@@ -200,17 +251,8 @@ class RobotController(Node):
         t.transform.rotation.y = q[1]
         t.transform.rotation.z = q[2]
         t.transform.rotation.w = q[3]
-        self.tf_broadcaster.sendTransform(t)        
+        self.tf_broadcaster.sendTransform(t)     
 
-    def transform_point(self, x, y, z, transform):
-        """
-        Transform a point from one frame to another using a transform.
-        """
-        transformed_point = Point()
-        transformed_point.x = x + transform.transform.translation.x
-        transformed_point.y = y + transform.transform.translation.y
-        transformed_point.z = z + transform.transform.translation.z
-        return transformed_point
 
     def create_marker(self, x, y):
         """
@@ -232,12 +274,8 @@ class RobotController(Node):
         marker.color.b = 0.0
         return marker
 
-    def stop(self):
-        twist_msg = Twist()
-        twist_msg.linear.x = 0.0
-        twist_msg.angular.z = 0.0
-        self.cmd_vel_pub.publish(twist_msg)
 
+##################################### Main Loop #####################################
 def main(args=None):
     rclpy.init(args=args)
     robot_controller = RobotController()
