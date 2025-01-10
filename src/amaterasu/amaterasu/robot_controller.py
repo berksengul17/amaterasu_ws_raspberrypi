@@ -2,12 +2,12 @@ import rclpy
 import math
 import time
 from rclpy.node import Node
+from geometry_msgs.msg import Point
 from geometry_msgs.msg import Twist, PoseStamped, TransformStamped
 from nav_msgs.msg import Path
 from std_msgs.msg import Float32, Float32MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 from tf2_ros import TransformBroadcaster, Buffer, TransformListener
-from geometry_msgs.msg import Point
 from tf_transformations import quaternion_from_euler
 
 class RobotController(Node):
@@ -25,9 +25,15 @@ class RobotController(Node):
         self.last_time = time.time()
 
         # Subscriptions
+        # self.create_subscription(
+        #     Float32,
+        #     "/imu/fused",
+        #     self.imu_fused_callback,
+        #     10
+        # )
         self.create_subscription(
             Float32,
-            "/imu/fused",
+            "/imu/data",
             self.imu_fused_callback,
             10
         )

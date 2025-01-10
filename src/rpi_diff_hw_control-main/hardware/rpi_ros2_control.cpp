@@ -228,8 +228,11 @@ namespace rpi_diff_hw_control
         int leftEncoderCountsNew = m_rpiDriveObj.readEncoders("left");
         int rightEncoderCountsNew = m_rpiDriveObj.readEncoders("right");
 
-        RCLCPP_WARN(logger_,"Left encoder: %d", leftEncoderCountsNew);
-        RCLCPP_WARN(logger_,"Right encoder: %d", rightEncoderCountsNew);
+        leftTotal += leftEncoderCounts;
+        rightTotal += rightEncoderCounts;
+
+        RCLCPP_WARN(logger_,"Left encoder: %d", leftTotal);
+        RCLCPP_WARN(logger_,"Right encoder: %d", rightTotal);
 
         // Calculate left wheel displacement
         double leftDisplacement = (leftEncoderCountsNew - leftEncoderCounts) * (2 * M_PI * wheelRadius) / leftCPR;
@@ -307,11 +310,11 @@ namespace rpi_diff_hw_control
         }
         else if (left_velocity < 0.0 && right_velocity > 0.0)
         {
-            m_rpiDriveObj.left(std::abs(left_velocity)); // Move left method
+            m_rpiDriveObj.left(std::abs(left_velocity), std::abs(right_velocity)); // Move left method
         }
         else if (left_velocity > 0.0 && right_velocity < 0.0)
         {
-            m_rpiDriveObj.right(std::abs(right_velocity)); // Move right method
+            m_rpiDriveObj.right(std::abs(left_velocity), std::abs(right_velocity)); // Move right method
         }
         else
         {

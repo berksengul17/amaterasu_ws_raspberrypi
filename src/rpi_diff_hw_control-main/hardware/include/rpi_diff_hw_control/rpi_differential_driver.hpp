@@ -29,19 +29,21 @@ class RpiDriveController : public rclcpp::Node
         const unsigned int m_leftBackward = 27; // GPIO pin number
         const unsigned int m_rightForward = 24; // GPIO pin number
         const unsigned int m_rightBackward = 25; // GPIO pin number
+        const unsigned int m_leftEnc = 16; // GPIO pin number
+        const unsigned int m_rightEnc = 26; // GPIO pin number
 
         const unsigned int m_motorRpm = 250;              // max rpm of motor on full voltage 
         const double m_wheelDiameter = 0.065;      // in meters
         const double m_wheelSeparation = 0.07;     // in meters
-        const int m_maxPwmval = 100;           // 100 for Raspberry Pi, 255 for Arduino
-        const int m_minPwmVal = 0;             // Minimum PWM value that is needed for the robot to move
+        const int m_maxPwmval = 50;           // 100 for Raspberry Pi, 255 for Arduino
+        const int m_minPwmVal = 30;             // Minimum PWM value that is needed for the robot to move
 
         const double m_wheelRadius = m_wheelDiameter / 2;
         const double m_circumference_of_wheel = 2 * M_PI * m_wheelRadius;
         const double m_maxSpeed = (m_circumference_of_wheel * m_motorRpm) / 60;   // 0.85 m/sec
 
         /* PWM frequency is 100 Hz */ 
-        const unsigned int pwmFrequency = 100;
+        const unsigned int pwmFrequency = 25;
 
         int m_pwmL = 0, m_pwmR = 0;
 
@@ -160,21 +162,24 @@ class RpiDriveController : public rclcpp::Node
         /**
          * @brief: Move Left 
         */
-        void left(double left_speed)
+        void left(double left_speed, double right_speed)
         {
             if (m_isConnectionOk >= 0) 
             { 
                 double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
-                // double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
-          
+                double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
+                
+                RCLCPP_INFO(get_logger(),"LPWM value = %.2f", lspeedPWM);
+                RCLCPP_INFO(get_logger(),"RightPWM value = %.2f", rspeedPWM);
+                
                 // Set PWM duty cycle for the GPIO pin
-                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM / 3.0);
-                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, lspeedPWM);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM);
 
                 /* Writing The Requested Pin Data */
-                gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_HIGH);
+                gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_LOW);
                 gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_HIGH);
-                gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_LOW);
+                gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_HIGH);
                 gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_LOW);
             }
         }
@@ -182,23 +187,26 @@ class RpiDriveController : public rclcpp::Node
         /**
          * @brief: Move Right 
         */
-        void right(double right_speed)
+        void right(double left_speed, double right_speed)
         {
             if (m_isConnectionOk >= 0) 
             {
-                // double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
+                double lspeedPWM = std::max(std::min(((left_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
                 double rspeedPWM = std::max(std::min(((right_speed / m_maxSpeed) * m_maxPwmval), static_cast<double>(m_maxPwmval)), static_cast<double>(m_minPwmVal));
           
+                RCLCPP_INFO(get_logger(),"LPWM value = %.2f", lspeedPWM);
+                RCLCPP_INFO(get_logger(),"RightPWM value = %.2f", rspeedPWM);
+
                 // Set PWM duty cycle for the GPIO pin
                 // 28, 12
-                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, rspeedPWM);
-                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM / 3.0);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_leftEn, lspeedPWM);
+                set_PWM_dutycycle(m_isConnectionOk,this->m_rightEn, rspeedPWM);
 
                 /* Writing The Requested Pin Data */
                 gpio_write(this->m_isConnectionOk, this->m_leftForward, PI_HIGH);
-                gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_HIGH);
+                gpio_write(this->m_isConnectionOk, this->m_rightForward, PI_LOW);
                 gpio_write(this->m_isConnectionOk, this->m_leftBackward, PI_LOW);
-                gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_LOW);
+                gpio_write(this->m_isConnectionOk, this->m_rightBackward, PI_HIGH);
             }
         }
 
@@ -253,13 +261,13 @@ class RpiDriveController : public rclcpp::Node
             if(wheel_name == "left" || "LEFT")
             {
                 /* Read the Value of the GPIO pin */
-                level = gpio_read(this->m_isConnectionOk, this->m_leftEn);
+                level = gpio_read(this->m_isConnectionOk, this->m_leftEnc);
                 return level;
             }
             if(wheel_name == "right" || "RIGHT")
             {
                 /* Read the Value of the GPIO pin */
-                level = gpio_read(this->m_isConnectionOk, this->m_rightEn);
+                level = gpio_read(this->m_isConnectionOk, this->m_rightEnc);
                 return level;
             } 
             return 0;

@@ -40,6 +40,9 @@ namespace rpi_diff_hw_control
             
         RpiDriveController m_rpiDriveObj;
         Params m_Params;
+
+        int leftTotal = 0.0;  // Accumulated left encoder counts
+        int rightTotal = 0.0; // Accumulated right encoder counts
             
         public:
             RpiController();

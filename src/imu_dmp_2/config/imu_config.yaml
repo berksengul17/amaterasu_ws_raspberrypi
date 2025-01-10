@@ -1,0 +1,12 @@
+imu_publisher:
+  ros__parameters:
+      topic_name: "imu_data"
+      frame_id: "base_link"
+      i2c_bus: 1
+      device_address: 0x68
+      x_accel_offset: 0.268961
+      y_accel_offset: 0.41047
+      z_accel_offset: 0.835341
+      x_gyro_offset: -6.78824
+      y_gyro_offset: -0.863969
+      z_gyro_offset: 2.23927
