@@ -3,16 +3,18 @@ from rclpy.node import Node
 import numpy as np
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Quaternion
+from std_msgs.msg import Float32
 
 class OrientationFilterNode(Node):
     def __init__(self):
-        super().__init__('orientation_filter')
+        super().__init__('orientation_filter_node')
 
         # ROS2 Subscriptions
         self.create_subscription(Imu, '/imu/data_raw', self.imu_callback, 10)
 
-        # ROS2 Publisher
+        # ROS2 Publishers
         self.quaternion_publisher = self.create_publisher(Quaternion, '/orientation', 10)
+        self.yaw_publisher = self.create_publisher(Float32, '/yaw_angle', 10)
 
         # Constants
         self.deltat = 0.001  # Sampling period in seconds (1 ms)
@@ -37,6 +39,12 @@ class OrientationFilterNode(Node):
         quaternion_msg.y = self.SEq[2]
         quaternion_msg.z = self.SEq[3]
         self.quaternion_publisher.publish(quaternion_msg)
+
+        # Calculate and publish the yaw angle
+        yaw_angle = self.calculate_yaw()
+        yaw_msg = Float32()
+        yaw_msg.data = yaw_angle
+        self.yaw_publisher.publish(yaw_msg)
 
     def filter_update(self, w_x, w_y, w_z, a_x, a_y, a_z):
         # Normalize accelerometer measurement
@@ -86,6 +94,18 @@ class OrientationFilterNode(Node):
         # Normalize quaternion
         self.SEq /= np.linalg.norm(self.SEq)
 
+    def calculate_yaw(self):
+        # Extract yaw from quaternion
+        _, _, yaw = self.quaternion_to_euler(self.SEq)
+        return yaw
+
+    def quaternion_to_euler(self, quaternion):
+        # Convert quaternion to Euler angles (roll, pitch, yaw)
+        w, x, y, z = quaternion
+        roll = np.arctan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x**2 + y**2))
+        pitch = np.arcsin(2.0 * (w * y - z * x))
+        yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y**2 + z**2))
+        return roll, pitch, yaw
 
 def main(args=None):
     rclpy.init(args=args)

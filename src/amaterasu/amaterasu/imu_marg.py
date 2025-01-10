@@ -37,6 +37,9 @@ class OrientationFilter(Node):
             10
         )
 
+        # Publisher
+        self.yaw_publisher = self.create_publisher(Float32, '/yaw_angle', 10)
+
     def imu_callback(self, msg: Imu):
         # Extract accelerometer and gyroscope data from IMU
         self.a_x = msg.linear_acceleration.x
@@ -49,6 +52,10 @@ class OrientationFilter(Node):
 
         # Update the filter
         self.filter_update(self.w_x, self.w_y, self.w_z, self.a_x, self.a_y, self.a_z, self.m_x, self.m_y, self.m_z)
+
+        # Publish the yaw angle
+        yaw = self.compute_yaw_angle()
+        self.yaw_publisher.publish(Float32(data=yaw))
 
     def mag_callback(self, msg: Float32):
         # Update magnetometer data
@@ -122,6 +129,12 @@ class OrientationFilter(Node):
             self.SEq_3 / norm,
             self.SEq_4 / norm,
         )
+
+    def compute_yaw_angle(self):
+        # Compute the yaw angle (in radians) from the quaternion
+        yaw = math.atan2(2.0 * (self.SEq_1 * self.SEq_4 + self.SEq_2 * self.SEq_3),
+                         1.0 - 2.0 * (self.SEq_3 ** 2 + self.SEq_4 ** 2))
+        return yaw
 
 def main(args=None):
     rclpy.init(args=args)
