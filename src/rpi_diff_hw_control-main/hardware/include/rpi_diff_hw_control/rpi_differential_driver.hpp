@@ -232,8 +232,12 @@ class RpiDriveController : public rclcpp::Node
                 set_mode(this->m_isConnectionOk, this->m_leftForward, PI_OUTPUT);
                 set_mode(this->m_isConnectionOk, this->m_rightForward, PI_OUTPUT);
                 set_mode(this->m_isConnectionOk, this->m_rightBackward, PI_OUTPUT);
+                
                 set_mode(this->m_isConnectionOk, this->m_leftEnc, PI_INPUT);
                 set_mode(this->m_isConnectionOk, this->m_rightEnc, PI_INPUT);
+
+                set_pull_up_down(this->m_isConnectionOk, this->m_leftEnc, PI_PUD_UP);
+                set_pull_up_down(this->m_isConnectionOk, this->m_rightEnc, PI_PUD_UP);
 
                 /* Set GPIO pin as PWM output and start PWM with specified frequency */
                 this->m_pwmL = set_PWM_frequency(this->m_isConnectionOk, this->m_leftEn, this->pwmFrequency);
@@ -260,13 +264,13 @@ class RpiDriveController : public rclcpp::Node
 
             int level = 0;
 
-            if(wheel_name == "left" || "LEFT")
+            if (wheel_name == "left" || wheel_name == "LEFT")
             {
                 /* Read the Value of the GPIO pin */
                 level = gpio_read(this->m_isConnectionOk, this->m_leftEnc);
                 return level;
             }
-            if(wheel_name == "right" || "RIGHT")
+            if (wheel_name == "right" || wheel_name == "RIGHT")
             {
                 /* Read the Value of the GPIO pin */
                 level = gpio_read(this->m_isConnectionOk, this->m_rightEnc);

@@ -208,12 +208,12 @@ namespace rpi_diff_hw_control
         auto startTime = std::chrono::high_resolution_clock::now();
 
         // Finding the position and velocity    
-        int leftEncoderCounts = m_rpiDriveObj.readEncoders("left");
-        int rightEncoderCounts = m_rpiDriveObj.readEncoders("right");
+        int leftEncoderCounts = 1 - m_rpiDriveObj.readEncoders("left");
+        int rightEncoderCounts = 1 - m_rpiDriveObj.readEncoders("right");
 
         // Assuming CPR is counts per revolution
-        int leftCPR = 80; // Replace with your left encoder CPR
-        int rightCPR = 80; // Replace with your right encoder CPR
+        int leftCPR = 40; // Replace with your left encoder CPR
+        int rightCPR = 40; // Replace with your right encoder CPR
 
         // Assuming wheel radius in meters
         double wheelRadius = 0.0325;
