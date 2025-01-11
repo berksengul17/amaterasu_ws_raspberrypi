@@ -6,6 +6,7 @@ from collections import deque
 from rclpy.node import Node
 from std_msgs.msg import Float32
 from tf2_ros import TransformBroadcaster
+from sensor_msgs.msg import MagneticField
 from geometry_msgs.msg import TransformStamped
 import numpy as np
 
@@ -67,7 +68,9 @@ class QMC5883LCompass(Node):
         self.heading_history = deque(maxlen = 20)
 
         self.publisher = self.create_publisher(Float32, "/magnetometer/smoothed", 10)
+        self.raw_pub = self.create_publisher(MagneticField, "/magnetometer/raw", 10)
         self.timer = self.create_timer(0.1, self.publish_heading)
+        self.timer2 = self.create_timer(0.1, self.get_data)
 
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -87,6 +90,20 @@ class QMC5883LCompass(Node):
         y = self._convert(raw_data[2], raw_data[3])
         z = self._convert(raw_data[4], raw_data[5])
         return x, y, z
+    
+    def get_data(self):
+        x, y, z = self.read_raw_data()
+        x = (x - self.offset[0]) / self.scale[0]
+        y = (y - self.offset[1]) / self.scale[1]
+        z = (z - self.offset[2]) / self.scale[2]
+
+        msg = MagneticField()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.magnetic_field.x = x
+        msg.magnetic_field.y = y
+        msg.magnetic_field.z = z
+
+        self.get_logger().info(f"{x} {y} {z}")
 
     def _convert(self, low, high):
         value = (high << 8) | low
@@ -110,7 +127,19 @@ class QMC5883LCompass(Node):
             max_vals[2] = max(max_vals[2], z)
 
         self.offset = [(max_vals[i] + min_vals[i]) / 2 for i in range(3)]
-        self.scale = [(max_vals[i] - min_vals[i]) / 2 for i in range(3)]
+
+        x_avg_delta = (max_vals[0] - min_vals[0])/2
+        y_avg_delta = (max_vals[1] - min_vals[1])/2
+        z_avg_delta = (max_vals[2] - min_vals[2])/2
+
+        avg_delta = (x_avg_delta + y_avg_delta + z_avg_delta) / 3
+
+        self.scale = [
+            avg_delta / x_avg_delta,
+            avg_delta / y_avg_delta,
+            avg_delta / z_avg_delta
+        ]
+        
         self.get_logger().info(f"Calibration complete: Offsets={self.offset}, Scales={self.scale}")
 
     def set_magnetic_declination(self, degrees, minutes):
@@ -118,14 +147,13 @@ class QMC5883LCompass(Node):
 
     def get_azimuth(self):
         x, y, z = self.read_raw_data()
-        x = (x - self.offset[0]) / self.scale[0]
-        y = (y - self.offset[1]) / self.scale[1]
+        x = (x - self.offset[0]) * self.scale[0]
+        y = (y - self.offset[1]) * self.scale[1]
 
         # Calculate heading in the map frame
         heading = math.atan2(y, x) * (180 / math.pi) # degrees
-        if heading < 0:
-                heading += 360.0
         heading += self.magnetic_declination
+#        heading = heading % 360
 
         if heading < 0.0:
             heading += 360.0
@@ -147,7 +175,7 @@ class QMC5883LCompass(Node):
         self.heading_history.append(heading)
 
         magnetic_field = Float32()
-        magnetic_field.data = heading
+        magnetic_field.data = heading - 30.0
 
         # self.get_logger().info(f"Yaw: {magnetic_field.data:.2f}")
         

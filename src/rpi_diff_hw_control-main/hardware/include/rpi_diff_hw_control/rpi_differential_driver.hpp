@@ -23,18 +23,18 @@ class RpiDriveController : public rclcpp::Node
     private:
         
         /* Constants */ 
-        const unsigned int m_leftEn = 17;  // GPIO pin number
-        const unsigned int m_rightEn = 23; // GPIO pin number
-        const unsigned int m_leftForward = 22; // GPIO pin number
-        const unsigned int m_leftBackward = 27; // GPIO pin number
-        const unsigned int m_rightForward = 24; // GPIO pin number
-        const unsigned int m_rightBackward = 25; // GPIO pin number
+        const unsigned int m_leftEn = 23;  // GPIO pin number
+        const unsigned int m_rightEn = 17; // GPIO pin number
+        const unsigned int m_leftForward = 25; // GPIO pin number
+        const unsigned int m_leftBackward = 24; // GPIO pin number
+        const unsigned int m_rightForward = 22; // GPIO pin number
+        const unsigned int m_rightBackward = 27; // GPIO pin number
         const unsigned int m_leftEnc = 16; // GPIO pin number
         const unsigned int m_rightEnc = 26; // GPIO pin number
 
         const unsigned int m_motorRpm = 250;              // max rpm of motor on full voltage 
         const double m_wheelDiameter = 0.065;      // in meters
-        const double m_wheelSeparation = 0.07;     // in meters
+        const double m_wheelSeparation = 0.13;     // in meters
         const int m_maxPwmval = 50;           // 100 for Raspberry Pi, 255 for Arduino
         const int m_minPwmVal = 30;             // Minimum PWM value that is needed for the robot to move
 
@@ -232,6 +232,8 @@ class RpiDriveController : public rclcpp::Node
                 set_mode(this->m_isConnectionOk, this->m_leftForward, PI_OUTPUT);
                 set_mode(this->m_isConnectionOk, this->m_rightForward, PI_OUTPUT);
                 set_mode(this->m_isConnectionOk, this->m_rightBackward, PI_OUTPUT);
+                set_mode(this->m_isConnectionOk, this->m_leftEnc, PI_INPUT);
+                set_mode(this->m_isConnectionOk, this->m_rightEnc, PI_INPUT);
 
                 /* Set GPIO pin as PWM output and start PWM with specified frequency */
                 this->m_pwmL = set_PWM_frequency(this->m_isConnectionOk, this->m_leftEn, this->pwmFrequency);

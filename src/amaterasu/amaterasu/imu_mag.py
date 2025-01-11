@@ -43,12 +43,12 @@ class SensorFusionNode(Node):
             self.imu_callback,
             10
         )
-        # self.mag_subscription = self.create_subscription(
-        #     Float32,
-        #     '/magnetometer/smoothed',
-        #     self.mag_callback,
-        #     10
-        # )
+        self.mag_subscription = self.create_subscription(
+            Float32,
+            '/magnetometer/smoothed',
+            self.mag_callback,
+            10
+        )
 
         # Publisher
         self.fused_publisher = self.create_publisher(Float32, '/imu/fused', 10)

@@ -33,16 +33,16 @@ namespace rpi_diff_hw_control
             std::string device = "/dev/ttyUSB0";
             int baud_rate = 57600;
             int timeout = 1000;
-            int enc_counts_per_rev = 3436;
+            int enc_counts_per_rev = 40;
         };
 
         private:
             
         RpiDriveController m_rpiDriveObj;
         Params m_Params;
-
-        int leftTotal = 0.0;  // Accumulated left encoder counts
-        int rightTotal = 0.0; // Accumulated right encoder counts
+        int prevLeftEncoderCounts = 0;
+        int prevRightEncoderCounts = 0;
+        std::chrono::time_point<std::chrono::high_resolution_clock> prevTime;
             
         public:
             RpiController();

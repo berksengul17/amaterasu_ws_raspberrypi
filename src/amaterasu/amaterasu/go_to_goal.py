@@ -11,8 +11,6 @@ from tf2_ros import TransformBroadcaster
 
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist, Quaternion, TransformStamped
-from sensor_msgs.msg import LaserScan
-
 from amaterasu_interfaces.action import GoToGoal
 from amaterasu.pid import PidController
 
@@ -24,14 +22,14 @@ class GoToGoalNode(Node):
         self.get_logger().info("creating publisher...")
         self.twist_publisher = self.create_publisher(
             Twist,
-            'cmd_vel',
+            '/cmd_vel',
             10
         )
 
         self.get_logger().info("creating odometry subscriber...")
         self.odom_subscription = self.create_subscription(
             Odometry,
-            'odom',
+            '/diffbot_base_controller/odom',
             self.odom_callback,
             10
         )
@@ -81,7 +79,7 @@ class GoToGoalNode(Node):
         self.current_x = odom.pose.pose.position.x
         self.current_y = odom.pose.pose.position.y
         self.current_theta = self.get_euler_from_quaternion(odom.pose.pose.orientation)[2]
-        # self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
+        self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
         # get direction vectors for both behaviors
         # self.get_logger().info('get "go-to-goal" vector')
         self.gtg_r, self.gtg_theta = self.get_go_to_goal_vector()
@@ -117,7 +115,7 @@ class GoToGoalNode(Node):
         self.get_logger().info('Executing action...')
 
         feedback_msg = GoToGoal.Feedback()
-        log_file = open(f'/home/pepe/log/{int(time.time() * 1000)}.log', 'w')
+        log_file = open(f'/home/amaterasu/log/{int(time.time() * 1000)}.log', 'w')
 
         while not self.update_control_loop():
             self.is_moving = True
@@ -216,8 +214,7 @@ class GoToGoalNode(Node):
     def quaternion_from_euler(self, roll, pitch, yaw) -> Quaternion:
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
+        cp = math.cos(pitch * 00.5)
         cr = math.cos(roll * 0.5)
         sr = math.sin(roll * 0.5)
 
@@ -245,12 +242,12 @@ class GoToGoalNode(Node):
 
         t_goal.transform.rotation = self.quaternion_from_euler(0, 0, self.gtg_theta)
 
-        t_obstacle = TransformStamped()
-        t_obstacle.header.stamp = timestamp
-        t_obstacle.header.frame_id = '/base_link'
-        t_obstacle.child_frame_id = '/ao'
+        # t_obstacle = TransformStamped()
+        # t_obstacle.header.stamp = timestamp
+        # t_obstacle.header.frame_id = '/base_link'
+        # t_obstacle.child_frame_id = '/ao'
 
-        t_obstacle.transform.rotation = self.quaternion_from_euler(0, 0, self.ao_theta)
+        # t_obstacle.transform.rotation = self.quaternion_from_euler(0, 0, self.ao_theta)
 
         t_desired = TransformStamped()
         t_desired.header.stamp = timestamp
@@ -260,7 +257,7 @@ class GoToGoalNode(Node):
         t_desired.transform.rotation = self.quaternion_from_euler(0, 0, self.theta_desired)
         # self.get_logger().info('Publishing transforms for vectors')
         self.tf_broadcaster.sendTransform(t_goal)
-        self.tf_broadcaster.sendTransform(t_obstacle)
+        # self.tf_broadcaster.sendTransform(t_obstacle)
         self.tf_broadcaster.sendTransform(t_desired)
 
 

@@ -4,13 +4,14 @@ import numpy as np
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Quaternion
 from std_msgs.msg import Float32
+import math
 
 class OrientationFilterNode(Node):
     def __init__(self):
         super().__init__('orientation_filter_node')
 
         # ROS2 Subscriptions
-        self.create_subscription(Imu, '/imu/data_raw', self.imu_callback, 10)
+        self.create_subscription(Imu, '/imu', self.imu_callback, 10)
 
         # ROS2 Publishers
         self.quaternion_publisher = self.create_publisher(Quaternion, '/orientation', 10)
@@ -43,7 +44,7 @@ class OrientationFilterNode(Node):
         # Calculate and publish the yaw angle
         yaw_angle = self.calculate_yaw()
         yaw_msg = Float32()
-        yaw_msg.data = yaw_angle
+        yaw_msg.data = math.degrees(yaw_angle)
         self.yaw_publisher.publish(yaw_msg)
 
     def filter_update(self, w_x, w_y, w_z, a_x, a_y, a_z):

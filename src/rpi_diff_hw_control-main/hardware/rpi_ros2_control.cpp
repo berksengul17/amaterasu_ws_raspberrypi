@@ -48,7 +48,7 @@ namespace rpi_diff_hw_control
             m_Params.loop_rate = 30.0;
             m_Params.baud_rate = 57600;
             m_Params.timeout = 1000;
-            m_Params.enc_counts_per_rev = 3436;
+            m_Params.enc_counts_per_rev = 40;
         } 
         catch (const std::out_of_range& e)
         {
@@ -57,7 +57,7 @@ namespace rpi_diff_hw_control
             m_Params.loop_rate = 30.0;
             m_Params.baud_rate = 57600;
             m_Params.timeout = 1000;
-            m_Params.enc_counts_per_rev = 3436;
+            m_Params.enc_counts_per_rev = 40;
         }
         
         hw_positions_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
@@ -204,19 +204,19 @@ namespace rpi_diff_hw_control
     hardware_interface::return_type RpiController::read(const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
     {
         RCLCPP_WARN(logger_,"Rpi Read Is Triggred");
-        
+
+        auto startTime = std::chrono::high_resolution_clock::now();
+
         // Finding the position and velocity    
         int leftEncoderCounts = m_rpiDriveObj.readEncoders("left");
         int rightEncoderCounts = m_rpiDriveObj.readEncoders("right");
 
         // Assuming CPR is counts per revolution
-        int leftCPR = 3436; // Replace with your left encoder CPR
-        int rightCPR = 3436; // Replace with your right encoder CPR
+        int leftCPR = 80; // Replace with your left encoder CPR
+        int rightCPR = 80; // Replace with your right encoder CPR
 
         // Assuming wheel radius in meters
-        double wheelRadius = 0.065/2;
-
-        auto startTime = std::chrono::high_resolution_clock::now();
+        double wheelRadius = 0.0325;
 
         // Initialize positions
         double leftPosition = 0.0;
@@ -225,31 +225,25 @@ namespace rpi_diff_hw_control
         double leftVelocity = 0.0;
         double rightVelocity = 0.0;
 
-        int leftEncoderCountsNew = m_rpiDriveObj.readEncoders("left");
-        int rightEncoderCountsNew = m_rpiDriveObj.readEncoders("right");
-
-        leftTotal += leftEncoderCounts;
-        rightTotal += rightEncoderCounts;
-
-        RCLCPP_WARN(logger_,"Left encoder: %d", leftTotal);
-        RCLCPP_WARN(logger_,"Right encoder: %d", rightTotal);
+        // int leftEncoderCountsNew = m_rpiDriveObj.readEncoders("left");
+        // int rightEncoderCountsNew = m_rpiDriveObj.readEncoders("right");
 
         // Calculate left wheel displacement
-        double leftDisplacement = (leftEncoderCountsNew - leftEncoderCounts) * (2 * M_PI * wheelRadius) / leftCPR;
+        double leftDisplacement = leftEncoderCounts * (2 * M_PI * wheelRadius) / leftCPR;
 
         // Calculate right wheel displacement
-        double rightDisplacement = (rightEncoderCountsNew - rightEncoderCounts) * (2 * M_PI * wheelRadius) / rightCPR;
+        double rightDisplacement = rightEncoderCounts * (2 * M_PI * wheelRadius) / rightCPR;
 
-        // Update counts for the next iteration
-        leftEncoderCounts = leftEncoderCountsNew;
-        rightEncoderCounts = rightEncoderCountsNew;
+        RCLCPP_INFO(
+        rclcpp::get_logger("DiffBotSystemHardware"), "Left encoder: %d, Right encoder: %d", 
+        leftEncoderCounts, rightEncoderCounts);
 
         // Accumulate displacements to calculate positions
         leftPosition += leftDisplacement;
         rightPosition += rightDisplacement;
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsedTime = currentTime - startTime;
+        // auto currentTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsedTime = startTime - prevTime;
 
         // Calculate left wheel velocity
         leftVelocity = leftDisplacement / elapsedTime.count();
@@ -260,7 +254,9 @@ namespace rpi_diff_hw_control
         // Print or use the calculated values as needed
 
         // Reset start time for the next iteration
-        startTime = currentTime;
+        prevTime = startTime;
+        prevLeftEncoderCounts = leftEncoderCounts;
+        prevRightEncoderCounts = rightEncoderCounts;
 
         // Updating the current position
         hw_positions_[0] = leftPosition;
@@ -269,6 +265,10 @@ namespace rpi_diff_hw_control
         // Updating the current velocity
         hw_velocities_[0] = leftVelocity;
         hw_velocities_[1] = rightVelocity;
+
+        RCLCPP_INFO(
+        rclcpp::get_logger("DiffBotSystemHardware"), "hw_velocities %.5f - %.5f", 
+        hw_velocities_[0], hw_velocities_[1]);
 
         return hardware_interface::return_type::OK;
     }

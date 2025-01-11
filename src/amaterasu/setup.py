@@ -29,7 +29,9 @@ setup(
             'imu = amaterasu.imu:main',
             'imu_mag = amaterasu.imu_mag:main',
             'fuse = amaterasu.fuse:main',
-            'compass = amaterasu.qmc5883l:main'
+            'compass = amaterasu.qmc5883l:main',
+            'imu_ahrs = amaterasu.imu_ahrs:main',
+            'img_marg = amaterasu.imu_marg:main'
         ],
     },
 )
