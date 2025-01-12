@@ -32,6 +32,8 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 
 void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
 {
+    printf("LTicks: %d - RTicks: %d\n", l_encoder_ticks, r_encoder_ticks);
+
     int32_t l_ticks = l_encoder_ticks;
     int32_t r_ticks = r_encoder_ticks;
 
@@ -62,8 +64,10 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _state.l_effort = _l_output;
     _state.r_effort = _r_output;
 
+    float compensation_factor = r_ticks / l_ticks;
     _l_motor.write(_state.l_effort);
-    _r_motor.write(_state.r_effort);
+    _r_motor.write(_state.r_effort * compensation_factor);
+
 
     _state.l_ticks = l_ticks;
     _state.r_ticks = r_ticks;

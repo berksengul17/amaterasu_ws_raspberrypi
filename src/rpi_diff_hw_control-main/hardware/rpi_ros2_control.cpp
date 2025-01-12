@@ -48,7 +48,7 @@ namespace rpi_diff_hw_control
             m_Params.loop_rate = 30.0;
             m_Params.baud_rate = 57600;
             m_Params.timeout = 1000;
-            m_Params.enc_counts_per_rev = 40;
+            m_Params.enc_counts_per_rev = 1000;
         } 
         catch (const std::out_of_range& e)
         {
@@ -57,7 +57,7 @@ namespace rpi_diff_hw_control
             m_Params.loop_rate = 30.0;
             m_Params.baud_rate = 57600;
             m_Params.timeout = 1000;
-            m_Params.enc_counts_per_rev = 40;
+            m_Params.enc_counts_per_rev = 1000;
         }
         
         hw_positions_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
@@ -212,8 +212,8 @@ namespace rpi_diff_hw_control
         int rightEncoderCounts = 1 - m_rpiDriveObj.readEncoders("right");
 
         // Assuming CPR is counts per revolution
-        int leftCPR = 40; // Replace with your left encoder CPR
-        int rightCPR = 40; // Replace with your right encoder CPR
+        int leftCPR = 20; // Replace with your left encoder CPR
+        int rightCPR = 20; // Replace with your right encoder CPR
 
         // Assuming wheel radius in meters
         double wheelRadius = 0.0325;

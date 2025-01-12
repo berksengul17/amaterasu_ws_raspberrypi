@@ -33,7 +33,7 @@ namespace rpi_diff_hw_control
             std::string device = "/dev/ttyUSB0";
             int baud_rate = 57600;
             int timeout = 1000;
-            int enc_counts_per_rev = 40;
+            int enc_counts_per_rev = 1000;
         };
 
         private:
