@@ -8,13 +8,14 @@ std::unordered_map<unsigned, Encoder*>& Encoder::getInstances() {
 }
 
 Encoder::Encoder(uint out, int m_isConnectionOk)
-    : _out(out), _pulses(0), _m_isConnectionOk(m_isConnectionOk) {
+    : _out(out), _pulses(0), _last_level(0), _m_isConnectionOk(m_isConnectionOk) {
     if (_m_isConnectionOk < 0) {
         throw std::runtime_error("Pigpio initialization failed.");
     }
 
     set_mode(_m_isConnectionOk, _out, PI_INPUT);
     set_pull_up_down(_m_isConnectionOk, _out, PI_PUD_UP);
+    set_glitch_filter(_m_isConnectionOk, _out, 1000); // 1000 µs debounce
 
     // Use the static function to access the map and register the instance
     auto& instances = getInstances();
@@ -32,9 +33,11 @@ void Encoder::gpioCallback([[maybe_unused]] int pi, unsigned user_gpio, unsigned
     auto it = instances.find(user_gpio);
     if (it != instances.end()) {
         Encoder* instance = it->second;
-        if (level == 1 || level == 0) { // Rising or falling edge
+        if (level == 1 && instance->_last_level == 0) { // Rising or falling edge
             instance->incrementTicks();
         }
+        // Update the last recorded level
+        instance->_last_level = level;
     } else {
         std::cerr << "Error: Encoder instance not found for GPIO " << user_gpio << std::endl;
     }

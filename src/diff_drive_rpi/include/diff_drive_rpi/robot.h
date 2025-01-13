@@ -13,7 +13,7 @@
 #define L_MOTOR_MAX_SPEED 1.0f
 #define R_MOTOR_MIN_SPEED -1.0f
 #define R_MOTOR_MAX_SPEED 1.0f
-#define ROBOT_MOTOR_PPR 960.0f
+#define ROBOT_MOTOR_PPR 20.0f
 #define ROBOT_WHEEL_RADIUS 0.0325f
 #define ROBOT_WHEEL_SEPARATION 0.17f
 #define ROBOT_MAX_LINEAR_M_S 0.85
@@ -75,6 +75,7 @@ public:
     RobotOdometry getOdometry();
     void setPidTunings(float kp, float kd, float ki);
     void updatePid(uint l_encoder_ticks, uint r_encoder_ticks);
+    void updatePidParams(float kp, float kd, float ki);
 
 private:
     float _kp;

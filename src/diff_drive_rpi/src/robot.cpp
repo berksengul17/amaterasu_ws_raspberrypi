@@ -3,6 +3,7 @@
 //
 
 #include "robot.h"
+#include <stdio.h>
 
 Robot::Robot(
         int m_isConnectionOk,
@@ -32,7 +33,7 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 
 void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
 {
-    printf("LTicks: %d - RTicks: %d\n", l_encoder_ticks, r_encoder_ticks);
+    // printf("LTicks: %d - RTicks: %d\n", l_encoder_ticks, r_encoder_ticks);
 
     int32_t l_ticks = l_encoder_ticks;
     int32_t r_ticks = r_encoder_ticks;
@@ -49,8 +50,8 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _state.l_ref_speed = _l_setpoint;
     _state.r_ref_speed = _r_setpoint;
 
-    _state.l_speed = (2.0 * M_PI) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
-    _state.r_speed = (2.0 * M_PI) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
 
     _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
     _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
@@ -58,16 +59,20 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _l_input = _state.l_speed;
     _r_input = _state.r_speed;
 
+    // _l_output = _pid.calculate(_l_setpoint, _l_input);
+    // _r_output = _pid.calculate(_r_setpoint, _r_input);
     _l_pid.compute();
     _r_pid.compute();
 
     _state.l_effort = _l_output;
     _state.r_effort = _r_output;
 
-    float compensation_factor = r_ticks / l_ticks;
+    // float compensation_factor = _state.r_effort / _state.l_effort;
     _l_motor.write(_state.l_effort);
-    _r_motor.write(_state.r_effort * compensation_factor);
+    _r_motor.write(_state.r_effort);
 
+    printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n",
+    l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
 
     _state.l_ticks = l_ticks;
     _state.r_ticks = r_ticks;
@@ -99,13 +104,20 @@ void Robot::setUnicycle(float v, float w)
     if(w > ROBOT_MAX_ANGULAR_R_S) w = ROBOT_MAX_ANGULAR_R_S;
     if(w < ROBOT_MIN_ANGULAR_R_S) w = ROBOT_MIN_ANGULAR_R_S;
 
-    float v_l = (2 * v - w * ROBOT_WHEEL_SEPARATION) / (2 * ROBOT_WHEEL_RADIUS);
-    float v_r = (2 * v + w * ROBOT_WHEEL_SEPARATION) / (2 * ROBOT_WHEEL_RADIUS);
+    float v_l = (2 * v - w * ROBOT_WHEEL_SEPARATION) / 2;
+    float v_r = (2 * v + w * ROBOT_WHEEL_SEPARATION) / 2;
 
     _linear = v;
     _angular = w;
     setWheels(v_l, v_r);
 }
+
+void Robot::updatePidParams(float kp, float kd, float ki) {
+    // Update internal PID parameters
+    _l_pid.set_gains(kp, ki, kd);
+    _r_pid.set_gains(kp, ki, kd);
+}
+
 
 RobotState Robot::getState() {
     return _state;
@@ -114,6 +126,3 @@ RobotState Robot::getState() {
 RobotOdometry Robot::getOdometry() {
     return _odom;
 }
-
-
-

@@ -5,7 +5,6 @@
 #include "tf2_ros/transform_broadcaster.h"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
-#include "rotary_encoder.hpp"
 #include "robot.h"
 #include "robot_pins.h"
 #include "dc_motor.h"
@@ -14,18 +13,20 @@
 #include <cmath>
 #include <stdexcept>
 
-#define MOTOR_PPR 960.0f
-#define SAMPLE_TIME_MS 20
+#define MOTOR_PPR 20.0f
+#define SAMPLE_TIME_MS 100
 #define PWM_FREQUENCY 25
 
 class RobotNode : public rclcpp::Node {
 public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
-          kp1_(0.04), ki1_(0.01), kd1_(0.0),
-          robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
-                      {PWM_FREQUENCY, R_ENB_PIN, R_IN3_PIN, R_IN4_PIN}},
-          robot_(pigpio_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
+        kp1_(declare_parameter("kp", 2.0)),
+        ki1_(declare_parameter("ki", 0.0)),
+        kd1_(declare_parameter("kd", 0.5)),
+        robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
+                    {PWM_FREQUENCY, R_ENB_PIN, R_IN3_PIN, R_IN4_PIN}},
+        robot_(pigpio_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
     {
 
         // Publisher for odometry
@@ -42,6 +43,9 @@ public:
             std::chrono::milliseconds(SAMPLE_TIME_MS),
             std::bind(&RobotNode::update, this));
 
+        on_set_parameters_callback_handle_ = this->add_on_set_parameters_callback(
+            std::bind(&RobotNode::parameterCallback, this, std::placeholders::_1));
+
         // Initialize hardware
         setup();
     }
@@ -55,39 +59,52 @@ private:
             throw std::runtime_error("Failed to initialize pigpio.");
         }
 
-        // // Initialize encoders dynamically after pigpio_handle_ is ready
-        // left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN, pigpio_handle_);
-        // right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN, pigpio_handle_);
+        // Initialize encoders dynamically after pigpio_handle_ is ready
+        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN, pigpio_handle_);
+        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN, pigpio_handle_);
 
-        // // Initialize encoders
-        // left_encoder_->set_pulses(0);
-        // right_encoder_->set_pulses(0);
-
-        // Define encoder callbacks
-        auto left_encoder_callback = [this](int direction) {
-            left_encoder_pulses_ += direction;
-        };
-
-        auto right_encoder_callback = [this](int direction) {
-            right_encoder_pulses_ += direction;
-        };
-
-        // Initialize dual_encoder
-        dual_encoders_ = std::make_unique<dual_encoder>(
-            L_ENC_PIN, left_encoder_callback,
-            R_ENC_PIN, right_encoder_callback);
+        // Initialize encoders
+        left_encoder_->set_pulses(0);
+        right_encoder_->set_pulses(0);
 
         RCLCPP_INFO(this->get_logger(), "Setup complete.");
+    }
+
+    rcl_interfaces::msg::SetParametersResult parameterCallback(const std::vector<rclcpp::Parameter> &parameters) {
+        rcl_interfaces::msg::SetParametersResult result;
+        result.successful = true;  // Default to successful unless an error occurs
+        result.reason = "Parameters updated successfully.";
+
+        for (const auto &parameter : parameters) {
+            if (parameter.get_name() == "kp") {
+                kp1_ = parameter.as_double();
+                robot_.updatePidParams(kp1_, kd1_, ki1_);
+                RCLCPP_INFO(this->get_logger(), "Updated kp: %.2f", kp1_);
+            } else if (parameter.get_name() == "ki") {
+                ki1_ = parameter.as_double();
+                robot_.updatePidParams(kp1_, kd1_, ki1_);
+                RCLCPP_INFO(this->get_logger(), "Updated ki: %.2f", ki1_);
+            } else if (parameter.get_name() == "kd") {
+                kd1_ = parameter.as_double();
+                robot_.updatePidParams(kp1_, kd1_, ki1_);
+                RCLCPP_INFO(this->get_logger(), "Updated kd: %.2f", kd1_);
+            } else {
+                result.successful = false;  // Mark failure if an unexpected parameter is encountered
+                result.reason = "Unknown parameter: " + parameter.get_name();
+            }
+        }
+
+        return result;
     }
 
     void printState(RobotState state, RobotOdometry odometry)
     {
         printf(
-            // diff setpoint,wheel setpoint, speed
-            "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-            state.l_ref_speed, state.r_ref_speed, state.l_speed, state.r_speed, state.l_effort, state.r_effort,
-            odometry.x_pos, odometry.y_pos, odometry.theta, odometry.v, odometry.w
-            );
+                // diff setpoint,wheel setpoint, speed
+                "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+                state.l_ref_speed, state.r_ref_speed, state.l_speed, state.r_speed, state.l_effort, state.r_effort,
+                odometry.x_pos, odometry.y_pos, odometry.theta, odometry.v, odometry.w
+                );
     }
 
 
@@ -120,11 +137,7 @@ private:
     void update() {
         // Update robot state
         robot_.setUnicycle(linear_, angular_);
-        robot_.updatePid(left_encoder_pulses_, right_encoder_pulses_);
-
-        // Reset encoder pulses after reading
-        left_encoder_pulses_ = 0;
-        right_encoder_pulses_ = 0;
+        robot_.updatePid(left_encoder_->get_pulses(), right_encoder_->get_pulses());
 
         // Get the current robot state and odometry
         // auto state = robot_.getState();
@@ -182,14 +195,13 @@ private:
     float ki1_;
     float kd1_;
 
+    OnSetParametersCallbackHandle::SharedPtr on_set_parameters_callback_handle_;
+
     // Encoders and Robot
     int pigpio_handle_;
     RobotPins robot_pins_;
-    // std::unique_ptr<Encoder> left_encoder_;
-    // std::unique_ptr<Encoder> right_encoder_;
-    std::unique_ptr<dual_encoder> dual_encoders_;
-    int left_encoder_pulses_ = 0;
-    int right_encoder_pulses_ = 0;
+    std::unique_ptr<Encoder> left_encoder_;
+    std::unique_ptr<Encoder> right_encoder_;
     Robot robot_;
 };
 

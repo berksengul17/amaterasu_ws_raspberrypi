@@ -20,7 +20,6 @@ add_executable(${PROJECT_NAME}
   main.cpp
   src/dc_motor.cpp 
   src/encoder.cpp 
-  src/rotary_encoder.cpp
   src/pid_controller.cpp 
   src/robot.cpp
   )
@@ -37,7 +36,7 @@ ament_target_dependencies(${PROJECT_NAME}
 )
 
 # Link pigpio library
-target_link_libraries(${PROJECT_NAME} pigpiod_if2 pigpio)
+target_link_libraries(${PROJECT_NAME} pigpiod_if2)
 
 install(TARGETS diff_drive_rpi
   DESTINATION lib/${PROJECT_NAME}

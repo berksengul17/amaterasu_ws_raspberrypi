@@ -20,6 +20,7 @@ public:
 private:
     uint _out;
     int32_t _pulses;
+    unsigned _last_level;
     int _m_isConnectionOk;
 
     void incrementTicks();

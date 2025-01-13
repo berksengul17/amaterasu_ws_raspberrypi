@@ -13,8 +13,6 @@
 #define R_IN3_PIN 22
 #define R_IN4_PIN 27
 
-#define POT_PIN 26
-
 #define L_ENC_PIN 16
 #define R_ENC_PIN 26
 
