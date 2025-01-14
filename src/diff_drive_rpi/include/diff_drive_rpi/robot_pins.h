@@ -5,11 +5,11 @@
 #ifndef DIFF_DRIVE_ROBOT_PINS_H
 #define DIFF_DRIVE_ROBOT_PINS_H
 
-#define L_ENA_PIN 23
+#define L_ENA_PIN 12
 #define L_IN1_PIN 25
 #define L_IN2_PIN 24
 
-#define R_ENB_PIN 17
+#define R_ENB_PIN 13
 #define R_IN3_PIN 22
 #define R_IN4_PIN 27
 

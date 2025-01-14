@@ -14,8 +14,8 @@
 #include <stdexcept>
 
 #define MOTOR_PPR 20.0f
-#define SAMPLE_TIME_MS 1000
-#define PWM_FREQUENCY 25
+#define SAMPLE_TIME_MS 20
+#define PWM_FREQUENCY 800
 
 class RobotNode : public rclcpp::Node {
 public:
@@ -130,7 +130,7 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
         linear_ = msg->linear.x;
         angular_ = msg->angular.z;
-        RCLCPP_INFO(this->get_logger(), "Received cmd_vel: linear=%.2f, angular=%.2f", linear_, angular_);
+        // RCLCPP_INFO(this->get_logger(), "Received cmd_vel: linear=%.2f, angular=%.2f", linear_, angular_);
     }
 
     void update() {

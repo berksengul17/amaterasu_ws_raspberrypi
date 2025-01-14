@@ -28,6 +28,8 @@ DCMotor::DCMotor(uint en_pin, int in1_pin, int in2_pin, int m_isConnectionOk, in
 
         set_PWM_frequency(_m_isConnectionOk, this->_en_pin, _pwmFrequency);
         set_PWM_dutycycle(_m_isConnectionOk, this->_en_pin, 0);
+        set_PWM_range(_m_isConnectionOk, this->_en_pin, TOP);
+        printf("Frequency: %d", get_PWM_real_range(_m_isConnectionOk, this->_en_pin));
     }
 }
 
@@ -51,12 +53,18 @@ void DCMotor::write_int16(int16_t pwm)
 
 void DCMotor::write(float duty_cycle)
 {
-    // if (duty_cycle > 1.0f)
-    //     duty_cycle = 1.0f;
-    // if (duty_cycle < -1.0f)
-    //     duty_cycle = -1.0f;
+    if (duty_cycle > 1.0f)
+        duty_cycle = 1.0f;
+    if (duty_cycle < -1.0f)
+        duty_cycle = -1.0f;
 
-    write_int16(static_cast<int16_t>(duty_cycle));
+    // minimum negative and positive speed
+    if (duty_cycle < 0.15f && duty_cycle > 0) 
+        duty_cycle = 0.15f;
+    if (duty_cycle > -0.15f && duty_cycle < 0) 
+        duty_cycle = -0.15f;
+
+    write_int16(static_cast<int16_t>(duty_cycle * TOP));
 }
 
 

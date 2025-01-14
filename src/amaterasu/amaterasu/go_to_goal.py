@@ -29,7 +29,7 @@ class GoToGoalNode(Node):
         self.get_logger().info("creating odometry subscriber...")
         self.odom_subscription = self.create_subscription(
             Odometry,
-            '/diffbot_base_controller/odom',
+            '/odom',
             self.odom_callback,
             10
         )
@@ -55,6 +55,7 @@ class GoToGoalNode(Node):
         self.goal_y = 0
         self.current_x = 0
         self.current_y = 0
+        self.current_theta = 0.0
 
         self.gtg_r = 0
         self.gtg_theta = 0
@@ -119,9 +120,9 @@ class GoToGoalNode(Node):
 
         while not self.update_control_loop():
             self.is_moving = True
-            feedback_msg.current_x = self.current_x
-            feedback_msg.current_y = self.current_x
-            feedback_msg.distance = self.get_distance_to_goal()
+            feedback_msg.current_x = float(self.current_x)
+            feedback_msg.current_y = float(self.current_x)
+            feedback_msg.distance = float(self.get_distance_to_goal())
             self.get_logger().info(f'current pos: {feedback_msg.current_x},{feedback_msg.current_y}, distance to goal: {self.get_distance_to_goal()}')
             self.get_logger().info(f'go_to_goal: [{self.gtg_r:.2f},{self.gtg_theta:.2f}]')
             self.send_twist_command()
