@@ -91,6 +91,12 @@ private:
     float _r_setpoint;
     float _linear;
     float _angular;
+    float _left_last_error;
+    float _right_last_error;
+    float _left_integral;
+    float _right_integral;
+    float _left_speed;
+    float _right_speed;
 
     DCMotor _l_motor;
     DCMotor _r_motor;

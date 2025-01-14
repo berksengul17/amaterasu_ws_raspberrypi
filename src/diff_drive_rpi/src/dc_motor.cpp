@@ -51,12 +51,12 @@ void DCMotor::write_int16(int16_t pwm)
 
 void DCMotor::write(float duty_cycle)
 {
-    if (duty_cycle > 1.0f)
-        duty_cycle = 1.0f;
-    if (duty_cycle < -1.0f)
-        duty_cycle = -1.0f;
+    // if (duty_cycle > 1.0f)
+    //     duty_cycle = 1.0f;
+    // if (duty_cycle < -1.0f)
+    //     duty_cycle = -1.0f;
 
-    write_int16(static_cast<int16_t>(duty_cycle * TOP));
+    write_int16(static_cast<int16_t>(duty_cycle));
 }
 
 

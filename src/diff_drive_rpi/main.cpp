@@ -14,16 +14,16 @@
 #include <stdexcept>
 
 #define MOTOR_PPR 20.0f
-#define SAMPLE_TIME_MS 100
+#define SAMPLE_TIME_MS 1000
 #define PWM_FREQUENCY 25
 
 class RobotNode : public rclcpp::Node {
 public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
-        kp1_(declare_parameter("kp", 2.0)),
-        ki1_(declare_parameter("ki", 0.0)),
-        kd1_(declare_parameter("kd", 0.5)),
+        kp1_(declare_parameter("kp", 8.0)),
+        ki1_(declare_parameter("ki", 0.02)),
+        kd1_(declare_parameter("kd", 0.0)),
         robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
                     {PWM_FREQUENCY, R_ENB_PIN, R_IN3_PIN, R_IN4_PIN}},
         robot_(pigpio_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
@@ -106,7 +106,6 @@ private:
                 odometry.x_pos, odometry.y_pos, odometry.theta, odometry.v, odometry.w
                 );
     }
-
 
     geometry_msgs::msg::Quaternion quaternionFromEuler(double roll, double pitch, double yaw) {
         geometry_msgs::msg::Quaternion q;

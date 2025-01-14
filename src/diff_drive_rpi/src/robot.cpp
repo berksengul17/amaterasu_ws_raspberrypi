@@ -28,6 +28,12 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
     _r_pid.set_output_limits(-1.0f, 1.0f);
     _l_setpoint = 0;
     _r_setpoint = 0;
+    _left_last_error = 0.0f;
+    _right_last_error = 0.0f;
+    _left_integral = 0.0f;
+    _right_integral = 0.0f;
+    _left_speed = 0.0f;
+    _right_speed = 0.0f;
     _pid_rate = float(sample_time_ms) / 1000.0f;
 }
 
@@ -38,8 +44,8 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     int32_t l_ticks = l_encoder_ticks;
     int32_t r_ticks = r_encoder_ticks;
 
-    _state.l_position = (2.0 * M_PI) * l_ticks / ROBOT_MOTOR_PPR;
-    _state.r_position = (2.0 * M_PI) * r_ticks / ROBOT_MOTOR_PPR;
+    _state.l_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * l_ticks / ROBOT_MOTOR_PPR;
+    _state.r_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * r_ticks / ROBOT_MOTOR_PPR;
 
     int32_t dl_ticks = l_ticks - _state.l_ticks;
     int32_t dr_ticks = r_ticks - _state.r_ticks;
@@ -61,18 +67,38 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
 
     // _l_output = _pid.calculate(_l_setpoint, _l_input);
     // _r_output = _pid.calculate(_r_setpoint, _r_input);
-    _l_pid.compute();
-    _r_pid.compute();
+    // _l_pid.compute();
+    // _r_pid.compute();
 
-    _state.l_effort = _l_output;
-    _state.r_effort = _r_output;
+    float left_error = _state.l_ref_speed - _state.l_speed;
+    _left_integral = _left_integral + left_error;
+    _left_speed = _left_speed + left_error * _kp + _left_integral * _ki + ((left_error - _left_last_error) * _kd);
+    _left_last_error = left_error;
+
+    float right_error = _state.r_ref_speed - _state.r_speed;
+    _right_integral = _right_integral + right_error;
+    _right_speed = _right_speed + right_error * _kp + _right_integral * _ki + ((right_error - _right_last_error) * _kd);
+    _right_last_error = right_error;
+
+    // _state.l_effort = _l_output;
+    // _state.r_effort = _r_output;
+    _state.l_effort = _left_speed * 100.0f;
+    _state.r_effort = _right_speed * 100.0f;
+
+    if (_state.l_ref_speed > 0 && _state.l_effort < 100.0f) _state.l_effort = 100.0f;
+    if (_state.r_ref_speed > 0 && _state.r_effort < 100.0f) _state.r_effort = 100.0f;
+    if (_state.l_effort < 255.0f) _state.l_effort = 255.0f;
+    if (_state.r_effort < 255.0f) _state.r_effort = 255.0f;
 
     // float compensation_factor = _state.r_effort / _state.l_effort;
     _l_motor.write(_state.l_effort);
     _r_motor.write(_state.r_effort);
 
-    printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n",
-    l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
+    printf("Dl ticks: %d, Dr ticks: %d\nLeft error: %f, Right error: %f, \nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
+            dl_ticks, dr_ticks, left_error, right_error, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
+
+    // printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n--------------------\n",
+    // l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
 
     _state.l_ticks = l_ticks;
     _state.r_ticks = r_ticks;
