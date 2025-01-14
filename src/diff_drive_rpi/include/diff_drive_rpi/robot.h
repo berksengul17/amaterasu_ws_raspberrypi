@@ -18,8 +18,8 @@
 #define ROBOT_WHEEL_SEPARATION 0.17f
 #define ROBOT_MAX_LINEAR_M_S 0.2
 #define ROBOT_MIN_LINEAR_M_S (-0.2)
-#define ROBOT_MAX_ANGULAR_R_S 0.2
-#define ROBOT_MIN_ANGULAR_R_S (-0.2)
+#define ROBOT_MAX_ANGULAR_R_S 2.0
+#define ROBOT_MIN_ANGULAR_R_S (-2.0)
 
 struct MotorPins
 {
