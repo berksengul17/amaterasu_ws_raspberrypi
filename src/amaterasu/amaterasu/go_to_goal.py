@@ -46,6 +46,7 @@ class GoToGoalNode(Node):
             cancel_callback=self.cancel_callback
         )
 
+
         # transform
         self.tf_broadcaster = TransformBroadcaster(self)
         # important variables
@@ -62,10 +63,10 @@ class GoToGoalNode(Node):
         self.theta_desired = 0
         self.r_desired = 0
 
-        self.sample_time = 0.1
-        self.max_linear_v = 0.08
+        self.sample_time = 0.8
+        self.max_linear_v = 0.2
         self.alpha = 5
-        self.angle_pid = PidController(0.3, 0.01, 0.002, self.sample_time, True)
+        self.angle_pid = PidController(0.4, 0.001, 0.002, self.sample_time, True)
         self.angle_pid.set_output_limits(-3, 3)
 
         self.get_logger().info("initialization finished")
@@ -73,8 +74,7 @@ class GoToGoalNode(Node):
         self.linear_command = 0
         self.angular_command = 0
 
-        ## logging utils
-
+        self.execute_rate = self.create_rate(1/self.sample_time)
 
     def odom_callback(self, odom: Odometry):
         self.current_x = odom.pose.pose.position.x
@@ -121,7 +121,7 @@ class GoToGoalNode(Node):
         while not self.update_control_loop():
             self.is_moving = True
             feedback_msg.current_x = float(self.current_x)
-            feedback_msg.current_y = float(self.current_x)
+            feedback_msg.current_y = float(self.current_y)
             feedback_msg.distance = float(self.get_distance_to_goal())
             self.get_logger().info(f'current pos: {feedback_msg.current_x},{feedback_msg.current_y}, distance to goal: {self.get_distance_to_goal()}')
             self.get_logger().info(f'go_to_goal: [{self.gtg_r:.2f},{self.gtg_theta:.2f}]')
@@ -129,7 +129,8 @@ class GoToGoalNode(Node):
             goal_handle.publish_feedback(feedback_msg)
             log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
             log_file.write(log_str)
-            time.sleep(self.sample_time)
+            # time.sleep(self.sample_time)
+            self.execute_rate.sleep()
 
         self.is_moving = False
         # should be 0
@@ -215,7 +216,7 @@ class GoToGoalNode(Node):
     def quaternion_from_euler(self, roll, pitch, yaw) -> Quaternion:
         cy = math.cos(yaw * 0.5)
         sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 00.5)
+        cp = math.cos(pitch * 0.5)
         sp = math.sin(pitch * 0.5)
         cr = math.cos(roll * 0.5)
         sr = math.sin(roll * 0.5)

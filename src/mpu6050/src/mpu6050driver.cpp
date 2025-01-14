@@ -6,11 +6,9 @@
 using namespace std::chrono_literals;
 
 MPU6050Driver::MPU6050Driver()
-    : Node("mpu6050publisher"), mpu6050_{std::make_unique<MPU6050Sensor>()},
-    last_calibration_time_(std::chrono::steady_clock::now()),
-    measurement_counter_(0)
+    : Node("mpu6050publisher"), 
+    mpu6050_{std::make_unique<MPU6050Sensor>()}
 {
-  
   // Declare parameters
   declareParameters();
   // Set parameters
@@ -60,22 +58,6 @@ void MPU6050Driver::handleInput()
   message.orientation.z = 0;
   message.orientation.w = 0;
   publisher_->publish(message);
-
-    // Increment measurement counter and check for calibration
-  ++measurement_counter_;
-  checkAndCalibrate();
-}
-
-void MPU6050Driver::checkAndCalibrate() {
-  auto now = std::chrono::steady_clock::now();
-  auto elapsed_time = std::chrono::duration_cast<std::chrono::seconds>(now - last_calibration_time_);
-
-  if (elapsed_time >= calibration_time_interval_ || measurement_counter_ >= calibration_threshold_count_) {
-    RCLCPP_INFO(this->get_logger(), "Auto-calibrating MPU6050...");
-    mpu6050_->calibrate();
-    last_calibration_time_ = now;
-    measurement_counter_ = 0;  // Reset counter
-  }
 }
 
 void MPU6050Driver::declareParameters()

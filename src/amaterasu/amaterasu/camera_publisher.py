@@ -21,8 +21,6 @@ class CameraPublisher(Node):
     def timer_callback_function(self):
         success, frame = self.camera.read()
 
-        frame = cv2.resize(frame, (256, 256), interpolation=cv2.INTER_CUBIC)
-
         if success:
             ros2_image_message = self.bridge_object.cv2_to_compressed_imgmsg(frame)
             self.publisher.publish(ros2_image_message)

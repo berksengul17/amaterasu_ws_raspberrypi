@@ -14,13 +14,6 @@ class MPU6050Driver : public rclcpp::Node {
   std::unique_ptr<MPU6050Sensor> mpu6050_;
   size_t count_;
   rclcpp::TimerBase::SharedPtr timer_;
-
-   // Calibration Tracking
-  std::chrono::steady_clock::time_point last_calibration_time_;
-  size_t measurement_counter_;
-  const size_t calibration_threshold_count_ = 1000;
-  const std::chrono::seconds calibration_time_interval_ = std::chrono::seconds(10);
-
   void handleInput();
   void declareParameters();
   void checkAndCalibrate();

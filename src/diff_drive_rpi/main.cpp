@@ -21,7 +21,7 @@ class RobotNode : public rclcpp::Node {
 public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
-        kp1_(declare_parameter("kp", 8.0)),
+        kp1_(declare_parameter("kp", 9.0)),
         ki1_(declare_parameter("ki", 0.03)),
         kd1_(declare_parameter("kd", 0.0)),
         robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
