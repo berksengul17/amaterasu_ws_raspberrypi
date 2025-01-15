@@ -51,7 +51,8 @@ class GoToGoalNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         # important variables
         self.is_moving = False
-        self.pos_tolerance = 0.5
+        self.pos_tolerance = 0.2 # 20 cm
+
         self.goal_x = 0
         self.goal_y = 0
         self.current_x = 0
@@ -68,7 +69,7 @@ class GoToGoalNode(Node):
         self.alpha = 5
         # 0.4, 0.001, 0.002
         # 3.88 3.78 3.94 -> 1.75
-        self.angle_pid = PidController(2.0, 0.0, 0.0, self.sample_time, True)
+        self.angle_pid = PidController(0.4, 0.001, 0.002, self.sample_time, True)
         self.angle_pid.set_output_limits(-3, 3)
 
         self.get_logger().info("initialization finished")
@@ -76,13 +77,15 @@ class GoToGoalNode(Node):
         self.linear_command = 0
         self.angular_command = 0
 
+        self.wanted_angle = 0.0
+
         self.execute_rate = self.create_rate(1/self.sample_time)
 
     def odom_callback(self, odom: Odometry):
         self.current_x = odom.pose.pose.position.x
         self.current_y = odom.pose.pose.position.y
         self.current_theta = self.get_euler_from_quaternion(odom.pose.pose.orientation)[2]
-        # self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
+        self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
         # get direction vectors for both behaviors
         # self.get_logger().info('get "go-to-goal" vector')
         self.gtg_r, self.gtg_theta = self.get_go_to_goal_vector()
@@ -118,7 +121,7 @@ class GoToGoalNode(Node):
         self.get_logger().info('Executing action...')
 
         feedback_msg = GoToGoal.Feedback()
-        log_file = open(f'/home/amaterasu/log/{int(time.time() * 1000)}.log', 'w')
+        log_file = open(f'/home/amaterasu/log/pid.log', 'w')
 
         while not self.update_control_loop():
             self.is_moving = True
@@ -129,7 +132,8 @@ class GoToGoalNode(Node):
             self.get_logger().info(f'go_to_goal: [{self.gtg_r:.2f},{self.gtg_theta:.2f}]')
             self.send_twist_command()
             goal_handle.publish_feedback(feedback_msg)
-            log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
+            log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.current_theta},{self.wanted_angle},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
+            #self.get_logger().info(log_str)
             log_file.write(log_str)
             # time.sleep(self.sample_time)
             self.execute_rate.sleep()
@@ -170,6 +174,9 @@ class GoToGoalNode(Node):
 
         self.linear_command = self.r_desired
         self.angular_command = self.angle_pid.get_output()      # from pid
+
+        if (self.wanted_angle == 0.0):
+            self.wanted_angle = self.theta_desired
 
         return False
 

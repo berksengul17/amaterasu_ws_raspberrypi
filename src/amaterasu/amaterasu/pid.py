@@ -14,7 +14,7 @@ class PidController:
         self.input = 0
         self.setpoint = 0
         self.error = 0
-        self.last_input = 0
+        self.last_error = 0
         self.set_output_limits(-1.0, 1.0)
         self.set_gains(self.kp, self.ki, self.kd)
 
@@ -57,7 +57,7 @@ class PidController:
         if self.is_angle:
             self.error = math.atan2(math.sin(self.error), math.cos(self.error))
         
-        delta_input = self.input - self.last_input
+        delta_error = self.error - self.last_error
         self.out_sum += self.ki * self.error
 
         if self.out_sum > self.out_max:
@@ -65,14 +65,14 @@ class PidController:
         elif self.out_sum < self.out_min:
             self.out_sum = self.out_min
 
-        self.output = self.kp * self.error + self.out_sum - self.kd * delta_input
+        self.output = self.kp * self.error + self.out_sum + self.kd * delta_error
 
         if self.output > self.out_max:
             self.output = self.out_max
         elif self.output < self.out_min:
             self.output = self.out_min
 
-        self.last_input = self.input
+        self.last_error = self.error
 
     def set_input(self, new_input):
         self.input = new_input

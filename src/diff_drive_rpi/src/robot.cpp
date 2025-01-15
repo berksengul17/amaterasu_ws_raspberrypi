@@ -58,8 +58,7 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _state.l_ref_speed = _l_setpoint;
     _state.r_ref_speed = _r_setpoint;
 
-    if (_state.l_ref_speed == 0 && _state.r_ref_speed == 0 &&
-        fabs(_state.l_speed) <= 0.03f && fabs(_state.r_speed) <= 0.03f &&
+    if (_state.l_ref_speed <= 0.003 && _state.r_ref_speed <= 0.003 &&
         l_encoder_ticks > 0 && r_encoder_ticks > 0) {
         _l_motor.write(0.0f); // Fully stop the left motor
         _r_motor.write(0.0f); // Fully stop the right motor
