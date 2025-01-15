@@ -12,6 +12,7 @@
 #include <pigpiod_if2.h>
 #include <cmath>
 #include <stdexcept>
+#include <array>
 
 #define MOTOR_PPR 20.0f
 #define SAMPLE_TIME_MS 200
@@ -21,6 +22,7 @@ class RobotNode : public rclcpp::Node {
 public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
+        startPose{0.0, 0.0}, initPose(false),
         kp1_(declare_parameter("kp", 9.0)),
         ki1_(declare_parameter("ki", 0.03)),
         kd1_(declare_parameter("kd", 0.0)),
@@ -137,10 +139,11 @@ private:
     }
 
     void robotCallback(const geometry_msgs::msg::Vector3::SharedPtr msg) {
-        if (initPose == false) {
+        if (!initPose) {
             startPose[0] = msg->x;
             startPose[1] = msg->y;
             initPose = true;
+            RCLCPP_INFO(this->get_logger(), "Initial pose set: x = %.2f, y = %.2f", startPose[0], startPose[1]);
         }
     }
 
@@ -152,6 +155,12 @@ private:
         // Get the current robot state and odometry
         // auto state = robot_.getState();
         auto odometry = robot_.getOdometry();
+
+        if (initPose) {
+            odometry.x_pos += startPose[0];
+            odometry.y_pos += startPose[1];
+        }
+
         auto robot_orientation = quaternionFromEuler(0.0, 0.0, odometry.theta);
         
         // Timestamp for odometry and transforms
@@ -193,12 +202,16 @@ private:
     // ROS 2 Publishers and Subscribers
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
+    rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr robot_pos_subscription_;
     rclcpp::TimerBase::SharedPtr timer_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     // Control variables
     float linear_;
     float angular_;
+
+    std::array<float, 2> startPose;
+    std::atomic<bool> initPose;
 
     // PID parameters
     float kp1_;
@@ -213,8 +226,6 @@ private:
     std::unique_ptr<Encoder> left_encoder_;
     std::unique_ptr<Encoder> right_encoder_;
     Robot robot_;
-    Boolean initPose;
-    float startPose[2];
 };
 
 int main(int argc, char *argv[]) {
