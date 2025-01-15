@@ -27,18 +27,18 @@ class BallGoalClient(Node):
 
     def ball_callback(self, ball_list: Float32MultiArray):
         if self.init:
-            new_balls = [(ball_list.data[i], ball_list.data[i + 1]) for i in range(0, len(ball_list.data), 2)]
-            new_balls.sort(key=lambda ball: math.sqrt((ball[0] - self.current_pose[0])**2 + (ball[1] - self.current_pose[1])**2))
+            self.balls = [(ball_list.data[i], ball_list.data[i + 1]) for i in range(0, len(ball_list.data), 2)]
+            self.sort_and_send_balls()
+            # new_balls.sort(key=lambda ball: math.sqrt((ball[0] - self.current_pose[0])**2 + (ball[1] - self.current_pose[1])**2))
 
-            # self.compare_balls(new_balls)
-            for new_ball in new_balls:
-                # Check if the new ball is already in the list within the tolerance
-                if (self.is_ball_in_list(new_ball) == -1):
-                    self.balls.append(new_ball)  # Add to the ball list
-                    self.get_logger().info(f"New ball detected: {new_ball}. Sending goal...")
-                    self.send_goal(new_ball[0], new_ball[1])
-                else:
-                    self.get_logger().info(f"Ball {new_ball} is already processed.")
+            # # self.compare_balls(new_balls)
+            # for new_ball in new_balls:
+            #     # Check if the new ball is already in the list within the tolerance
+            #     if (self.is_ball_in_list(new_ball) == -1):
+            #         self.balls.append(new_ball)  # Add to the ball list
+            #         self.get_logger().info(f"New ball detected: {new_ball}.")
+
+            # self.sort_and_send_balls()
 
     def robot_callback(self, msg: Vector3):
         if (self.init == False):
@@ -48,24 +48,48 @@ class BallGoalClient(Node):
     def odom_callback(self, odom: Odometry):
         self.current_pose[0] = odom.pose.pose.position.x
         self.current_pose[1] = odom.pose.pose.position.y
-
+        # self.get_logger().info(f"Position updated: {self.current_pose}")
+        
     def sort_and_send_balls(self):
+        self.balls.sort(key=lambda ball: math.sqrt((ball[0] - self.current_pose[0])**2 + (ball[1] - self.current_pose[1])**2))
         for ball in self.balls:
             self.current_goal = [ball[0], ball[1]]
             self.send_goal(ball[0], ball[1])
 
     def send_goal(self, x, y):
         goal_msg = GoToGoal.Goal()
-        goal_msg.x = x - self.current_pose[0]
-        goal_msg.y = y - self.current_pose[1]
+        goal_msg.x = x
+        goal_msg.y = y
 
         self.get_logger().info(f'Sending goal: x={goal_msg.x}, y={goal_msg.y}')
-        self._action_client.wait_for_server()
 
-        self._action_client.send_goal_async(
-            goal_msg,
-            feedback_callback=self.feedback_callback
-        )
+        if (self._action_client.wait_for_server()):
+            send_goal_future = self._action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=self.feedback_callback
+            )
+
+            # Add a result callback to handle the response
+            send_goal_future.add_done_callback(self.goal_response_callback)
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().info('Goal rejected.')
+            return
+
+        self.get_logger().info('Goal accepted. Waiting for result...')
+        get_result_future = goal_handle.get_result_async()
+        get_result_future.add_done_callback(self.result_callback)
+
+    def result_callback(self, future):
+        result = future.result().result
+        if result.goal_reached:
+            self.get_logger().info(f"Goal reached successfully at {self.current_goal}. Removing it from the list.")
+            # Remove the current goal from the list
+            self.balls = [ball for ball in self.balls if ball != self.current_goal]
+        else:
+            self.get_logger().info(f"Failed to reach goal at {self.current_goal}.")
 
     def feedback_callback(self, feedback_msg):
         """Handle feedback from the action server."""
@@ -79,26 +103,6 @@ class BallGoalClient(Node):
             if abs(ball[0] - new_ball[0]) <= tolerance and abs(ball[1] - new_ball[1]) <= tolerance:
                 return i  # Ball is already in the list
         return -1
-
-    def create_marker(self, x, y):
-        """
-        Create a marker for RViz visualization.
-        """
-        marker = Marker()
-        marker.header.frame_id = "map"
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = 0.0
-        marker.scale.x = 0.2
-        marker.scale.y = 0.2
-        marker.scale.z = 0.2
-        marker.color.a = 1.0
-        marker.color.r = 1.0
-        marker.color.g = 0.0
-        marker.color.b = 0.0
-        return marker
 
     # def combine_balls(self, new_balls):
     #     for new_ball in new_balls:

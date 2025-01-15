@@ -37,6 +37,9 @@ public:
         cmd_vel_subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "cmd_vel", 10,
             std::bind(&RobotNode::cmdVelCallback, this, std::placeholders::_1));
+        robot_pos_subscription_ = this->create_subscription<geometry_msgs::msg::Vector3>(
+            "/robot/bounding_box", 10,
+            std::bind(&RobotNode::robotCallback, this, std::placeholders::_1));
 
         // Timer for periodic updates
         timer_ = this->create_wall_timer(
@@ -133,6 +136,14 @@ private:
         // RCLCPP_INFO(this->get_logger(), "Received cmd_vel: linear=%.2f, angular=%.2f", linear_, angular_);
     }
 
+    void robotCallback(const geometry_msgs::msg::Vector3::SharedPtr msg) {
+        if (initPose == false) {
+            startPose[0] = msg->x;
+            startPose[1] = msg->y;
+            initPose = true;
+        }
+    }
+
     void update() {
         // Update robot state
         robot_.setUnicycle(linear_, angular_);
@@ -202,6 +213,8 @@ private:
     std::unique_ptr<Encoder> left_encoder_;
     std::unique_ptr<Encoder> right_encoder_;
     Robot robot_;
+    Boolean initPose;
+    float startPose[2];
 };
 
 int main(int argc, char *argv[]) {
