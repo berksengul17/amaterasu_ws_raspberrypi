@@ -31,7 +31,8 @@ setup(
             'fuse = amaterasu.fuse:main',
             'compass = amaterasu.qmc5883l:main',
             'imu_ahrs = amaterasu.imu_ahrs:main',
-            'img_marg = amaterasu.imu_marg:main'
+            'img_marg = amaterasu.imu_marg:main',
+            'ball_goal_client = amaterasu.ball_goal_client:main'
         ],
     },
 )

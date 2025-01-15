@@ -4,6 +4,8 @@
 
 #include "robot.h"
 #include <stdio.h>
+#include <thread>
+#include <chrono>
 
 Robot::Robot(
         int m_isConnectionOk,
@@ -56,48 +58,56 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _state.l_ref_speed = _l_setpoint;
     _state.r_ref_speed = _r_setpoint;
 
-    _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
-    _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    if (_state.l_ref_speed == 0 && _state.r_ref_speed == 0 &&
+        fabs(_state.l_speed) <= 0.03f && fabs(_state.r_speed) <= 0.03f &&
+        l_encoder_ticks > 0 && r_encoder_ticks > 0) {
+        _l_motor.write(0.0f); // Fully stop the left motor
+        _r_motor.write(0.0f); // Fully stop the right motor
+    }
+    else {
+        _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+        _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
 
-    _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
-    _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
+        _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
+        _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
 
-    _l_input = _state.l_speed;
-    _r_input = _state.r_speed;
+        _l_input = _state.l_speed;
+        _r_input = _state.r_speed;
 
-    // _l_output = _pid.calculate(_l_setpoint, _l_input);
-    // _r_output = _pid.calculate(_r_setpoint, _r_input);
-    _l_pid.compute();
-    _r_pid.compute();
+        // _l_output = _pid.calculate(_l_setpoint, _l_input);
+        // _r_output = _pid.calculate(_r_setpoint, _r_input);
+        _l_pid.compute();
+        _r_pid.compute();
 
-    // float left_error = _state.l_ref_speed - _state.l_speed;
-    // _left_integral = _left_integral + left_error;
-    // _left_speed = _left_speed + left_error * _kp + _left_integral * _ki + ((left_error - _left_last_error) * _kd);
-    // _left_last_error = left_error;
+        // float left_error = _state.l_ref_speed - _state.l_speed;
+        // _left_integral = _left_integral + left_error;
+        // _left_speed = _left_speed + left_error * _kp + _left_integral * _ki + ((left_error - _left_last_error) * _kd);
+        // _left_last_error = left_error;
 
-    // float right_error = _state.r_ref_speed - _state.r_speed;
-    // _right_integral = _right_integral + right_error;
-    // _right_speed = _right_speed + right_error * _kp + _right_integral * _ki + ((right_error - _right_last_error) * _kd);
-    // _right_last_error = right_error;
+        // float right_error = _state.r_ref_speed - _state.r_speed;
+        // _right_integral = _right_integral + right_error;
+        // _right_speed = _right_speed + right_error * _kp + _right_integral * _ki + ((right_error - _right_last_error) * _kd);
+        // _right_last_error = right_error;
 
-    _state.l_effort = _l_output;
-    _state.r_effort = _r_output;
-    // _state.l_effort = _left_speed * 100.0f;
-    // _state.r_effort = _right_speed * 100.0f;
+        _state.l_effort = _l_output;
+        _state.r_effort = _r_output;
+        // _state.l_effort = _left_speed * 100.0f;
+        // _state.r_effort = _right_speed * 100.0f;
 
-    // if (_state.l_ref_speed > 0 && _state.l_effort < 100.0f) _state.l_effort = 40.0f;
-    // if (_state.r_ref_speed > 0 && _state.r_effort < 100.0f) _state.r_effort = 40.0f;
-    // if (_state.l_effort > 100.0f) _state.l_effort = 60.0f;
-    // if (_state.r_effort > 100.0f) _state.r_effort = 60.0f;
+        // if (_state.l_ref_speed > 0 && _state.l_effort < 100.0f) _state.l_effort = 40.0f;
+        // if (_state.r_ref_speed > 0 && _state.r_effort < 100.0f) _state.r_effort = 40.0f;
+        // if (_state.l_effort > 100.0f) _state.l_effort = 60.0f;
+        // if (_state.r_effort > 100.0f) _state.r_effort = 60.0f;
 
-    _l_motor.write(_state.l_effort);
-    _r_motor.write(_state.r_effort);
+        _l_motor.write(_state.l_effort);
+        _r_motor.write(_state.r_effort);
 
-    printf("Dl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
-            dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
+        printf("LEncoder ticks: %d, REncoder ticks: %d\nDl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
+                l_encoder_ticks, r_encoder_ticks, dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
 
-    // printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n--------------------\n",
-    // l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
+        // printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n--------------------\n",
+        // l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
+    }
 
     _state.l_ticks = l_ticks;
     _state.r_ticks = r_ticks;
@@ -116,7 +126,7 @@ void Robot::updateOdometry(int32_t dl_ticks, int32_t dr_ticks) {
 }
 
 void Robot::setWheels(float left_speed, float right_speed)
-{
+{    
     _l_setpoint = left_speed;
     _r_setpoint = right_speed;
 }

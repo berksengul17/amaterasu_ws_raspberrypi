@@ -51,7 +51,7 @@ class GoToGoalNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         # important variables
         self.is_moving = False
-        self.pos_tolerance = 0.05
+        self.pos_tolerance = 0.5
         self.goal_x = 0
         self.goal_y = 0
         self.current_x = 0
@@ -66,7 +66,9 @@ class GoToGoalNode(Node):
         self.sample_time = 0.8
         self.max_linear_v = 0.2
         self.alpha = 5
-        self.angle_pid = PidController(0.4, 0.001, 0.002, self.sample_time, True)
+        # 0.4, 0.001, 0.002
+        # 3.88 3.78 3.94 -> 1.75
+        self.angle_pid = PidController(2.0, 0.0, 0.0, self.sample_time, True)
         self.angle_pid.set_output_limits(-3, 3)
 
         self.get_logger().info("initialization finished")
@@ -80,7 +82,7 @@ class GoToGoalNode(Node):
         self.current_x = odom.pose.pose.position.x
         self.current_y = odom.pose.pose.position.y
         self.current_theta = self.get_euler_from_quaternion(odom.pose.pose.orientation)[2]
-        self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
+        # self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
         # get direction vectors for both behaviors
         # self.get_logger().info('get "go-to-goal" vector')
         self.gtg_r, self.gtg_theta = self.get_go_to_goal_vector()
@@ -132,9 +134,9 @@ class GoToGoalNode(Node):
             # time.sleep(self.sample_time)
             self.execute_rate.sleep()
 
-        self.is_moving = False
         # should be 0
         self.send_twist_command()
+        self.is_moving = False
         log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
         log_file.write(log_str)
         log_file.close()
@@ -230,11 +232,12 @@ class GoToGoalNode(Node):
         return q
 
     def send_twist_command(self):
-        twist_msg = Twist()
-        twist_msg.linear.x = float(self.linear_command)
-        twist_msg.angular.z = float(self.angular_command)
-        self.get_logger().info(f'Publishing twist: {twist_msg}')
-        self.twist_publisher.publish(twist_msg)
+        if self.is_moving:
+            twist_msg = Twist()
+            twist_msg.linear.x = float(self.linear_command)
+            twist_msg.angular.z = float(self.angular_command)
+            self.get_logger().info(f'Publishing twist: {twist_msg}')
+            self.twist_publisher.publish(twist_msg)
 
     def publish_ref_vectors(self):
         timestamp = self.get_clock().now().to_msg()
