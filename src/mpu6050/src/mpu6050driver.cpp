@@ -6,8 +6,7 @@
 using namespace std::chrono_literals;
 
 MPU6050Driver::MPU6050Driver()
-    : Node("mpu6050publisher"), 
-    mpu6050_{std::make_unique<MPU6050Sensor>()}
+    : Node("mpu6050publisher"), mpu6050_{std::make_unique<MPU6050Sensor>()}
 {
   // Declare parameters
   declareParameters();

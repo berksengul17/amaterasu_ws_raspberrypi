@@ -16,7 +16,6 @@ class MPU6050Driver : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr timer_;
   void handleInput();
   void declareParameters();
-  void checkAndCalibrate();
 };
 
 #endif  // MPU6050DRIVER_H

@@ -10,6 +10,7 @@ from rclpy.executors import MultiThreadedExecutor
 from tf2_ros import TransformBroadcaster
 
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Twist, Quaternion, TransformStamped
 from amaterasu_interfaces.action import GoToGoal
 from amaterasu.pid import PidController
@@ -35,6 +36,14 @@ class GoToGoalNode(Node):
         )
         self.odom_subscription
 
+        self.imu_subscription = self.create_subscription(
+            Imu,
+            '/imu',
+            self.imu_callback,
+            10
+        )
+
+
         self.get_logger().info("creating action server...")
         self.go_to_goal_action_service = ActionServer(
             self,
@@ -46,12 +55,14 @@ class GoToGoalNode(Node):
             cancel_callback=self.cancel_callback
         )
 
+        self.gyro_z = 0.0
+        self.last_gyro_update = self.get_clock().now()
 
         # transform
         self.tf_broadcaster = TransformBroadcaster(self)
         # important variables
         self.is_moving = False
-        self.pos_tolerance = 0.2 # 20 cm
+        self.pos_tolerance = 0.22 # 20 cm
 
         self.goal_x = 0
         self.goal_y = 0
@@ -64,13 +75,17 @@ class GoToGoalNode(Node):
         self.theta_desired = 0
         self.r_desired = 0
 
-        self.sample_time = 0.8
+        self.sample_time = 0.1
         self.max_linear_v = 0.2
         self.alpha = 2
         # 0.4, 0.001, 0.002
         # 3.88 3.78 3.94 -> 1.75
-        self.angle_pid = PidController(0.4, 0.006, 0.002, self.sample_time, True)
-        self.angle_pid.set_output_limits(-1, 1)
+        # 0.4, 0.006, 0.0005
+        # 0.4, 0.002, 0.0010
+        # 0.4, 0.002, 0.0020
+        self.angle_pid = PidController(0.4, 0.002, 0.0005, self.sample_time, True)
+        # -1, 1
+        self.angle_pid.set_output_limits(-3.14, 3.14)
 
         self.get_logger().info("initialization finished")
 
@@ -79,16 +94,40 @@ class GoToGoalNode(Node):
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
+        self.yaw_correction_factor = 0.85  # Weight for IMU vs odometry
+
+
+    def imu_callback(self, imu_msg):
+        """Update the latest gyroscopic angular velocity."""
+        self.gyro_z = imu_msg.angular_velocity.z * math.pi / 180.0
+        self.last_gyro_update = self.get_clock().now()
+
     def odom_callback(self, odom: Odometry):
+        # Odometry-based position and yaw
         self.current_x = odom.pose.pose.position.x
         self.current_y = odom.pose.pose.position.y
-        self.current_theta = self.get_euler_from_quaternion(odom.pose.pose.orientation)[2]
-        self.get_logger().info(f'Current Position: ({self.current_x}, {self.current_y}, {self.current_theta})')
-        # get direction vectors for both behaviors
-        # self.get_logger().info('get "go-to-goal" vector')
-        self.gtg_r, self.gtg_theta = self.get_go_to_goal_vector()
+        odometry_theta = self.get_euler_from_quaternion(odom.pose.pose.orientation)[2]
 
+        # Time delta
+        current_time = self.get_clock().now()
+        time_delta = (current_time - self.last_gyro_update).nanoseconds / 1e9
+
+        # IMU-based yaw correction
+        imu_yaw_delta = self.gyro_z * time_delta
+        corrected_theta = (
+            self.yaw_correction_factor * odometry_theta +
+            (1 - self.yaw_correction_factor) * (self.current_theta + imu_yaw_delta)
+        )
+
+        # Update current theta with corrected value
+        self.current_theta = corrected_theta
+
+        self.get_logger().info(f"Corrected Yaw: {self.current_theta:.2f}, IMU Yaw Delta: {imu_yaw_delta:.2f}")
+
+        # Compute go-to-goal vector
+        self.gtg_r, self.gtg_theta = self.get_go_to_goal_vector()
         self.publish_ref_vectors()
+
         
     def add_two_callback(self, request, response):
         response.sum = request.a + request.b
@@ -150,30 +189,27 @@ class GoToGoalNode(Node):
 
 
     def update_control_loop(self):
-        # TODO: blending
         self.r_desired = self.gtg_r
         # arctan2(r2sin(ϕ2−ϕ1),r1+r2cos(ϕ2−ϕ1))
         self.theta_desired = self.gtg_theta
-
-        #-------
+        # If near the goal, stop the robot
         if self.get_distance_to_goal() <= self.pos_tolerance:
             self.linear_command = 0
             self.angular_command = 0
-            self.get_logger().info(f"Already near goal, distance: {self.get_distance_to_goal()}")
-            return True     # goal reached!
+            self.get_logger().info(f"Near goal, stopping. Distance: {self.get_distance_to_goal()}")
+            return True
 
-        # input to angle pid
+        # Input to PID: corrected yaw
         self.angle_pid.set_input(self.current_theta)
-        # setpoint
         self.angle_pid.set_setpoint(self.theta_desired)
 
-        # compute pid
+        # Compute PID outputs
         self.angle_pid.compute()
-
         self.linear_command = self.r_desired
-        self.angular_command = self.angle_pid.get_output()      # from pid
+        self.angular_command = self.angle_pid.get_output()
 
         return False
+
 
 
     def get_go_to_goal_vector(self):
