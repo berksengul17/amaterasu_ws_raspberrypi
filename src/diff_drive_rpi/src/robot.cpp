@@ -62,6 +62,7 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
         l_encoder_ticks > 0 && r_encoder_ticks > 0) {
         _l_motor.write(0.0f); // Fully stop the left motor
         _r_motor.write(0.0f); // Fully stop the right motor
+        // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
     else {
         _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);

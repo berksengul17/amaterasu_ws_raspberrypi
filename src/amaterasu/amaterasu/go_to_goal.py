@@ -66,18 +66,16 @@ class GoToGoalNode(Node):
 
         self.sample_time = 0.8
         self.max_linear_v = 0.2
-        self.alpha = 5
+        self.alpha = 2
         # 0.4, 0.001, 0.002
         # 3.88 3.78 3.94 -> 1.75
-        self.angle_pid = PidController(0.4, 0.001, 0.002, self.sample_time, True)
-        self.angle_pid.set_output_limits(-3, 3)
+        self.angle_pid = PidController(0.4, 0.006, 0.002, self.sample_time, True)
+        self.angle_pid.set_output_limits(-1, 1)
 
         self.get_logger().info("initialization finished")
 
         self.linear_command = 0
         self.angular_command = 0
-
-        self.wanted_angle = 0.0
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
@@ -132,7 +130,7 @@ class GoToGoalNode(Node):
             self.get_logger().info(f'go_to_goal: [{self.gtg_r:.2f},{self.gtg_theta:.2f}]')
             self.send_twist_command()
             goal_handle.publish_feedback(feedback_msg)
-            log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.current_theta},{self.wanted_angle},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
+            log_str = f'{int(time.time() * 1000)},{self.current_x},{self.current_y},{self.current_theta},{self.get_distance_to_goal()},{self.linear_command},{self.angular_command}\n'
             #self.get_logger().info(log_str)
             log_file.write(log_str)
             # time.sleep(self.sample_time)
@@ -174,9 +172,6 @@ class GoToGoalNode(Node):
 
         self.linear_command = self.r_desired
         self.angular_command = self.angle_pid.get_output()      # from pid
-
-        if (self.wanted_angle == 0.0):
-            self.wanted_angle = self.theta_desired
 
         return False
 
