@@ -62,7 +62,7 @@ class GoToGoalNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         # important variables
         self.is_moving = False
-        self.pos_tolerance = 0.22 # 20 cm
+        self.pos_tolerance = 0.15 # 20 cm
 
         self.goal_x = 0
         self.goal_y = 0
@@ -76,16 +76,17 @@ class GoToGoalNode(Node):
         self.r_desired = 0
 
         self.sample_time = 0.1
-        self.max_linear_v = 0.2
-        self.alpha = 2
+        self.max_linear_v = 1.8
+        self.alpha = 1.5
         # 0.4, 0.001, 0.002
         # 3.88 3.78 3.94 -> 1.75
         # 0.4, 0.006, 0.0005
         # 0.4, 0.002, 0.0010
         # 0.4, 0.002, 0.0020
-        self.angle_pid = PidController(0.4, 0.002, 0.0005, self.sample_time, True)
+        # 0.4, 0.006, 0.001
+        self.angle_pid = PidController(0.4, 0.006, 0.001, self.sample_time, True)
         # -1, 1
-        self.angle_pid.set_output_limits(-3.14, 3.14)
+        self.angle_pid.set_output_limits(-1, 1)
 
         self.get_logger().info("initialization finished")
 
@@ -94,7 +95,7 @@ class GoToGoalNode(Node):
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
-        self.yaw_correction_factor = 0.85  # Weight for IMU vs odometry
+        self.yaw_correction_factor = 0.85 # Weight for IMU vs odometry
 
 
     def imu_callback(self, imu_msg):
