@@ -41,8 +41,6 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 
 void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
 {
-    // printf("LTicks: %d - RTicks: %d\n", l_encoder_ticks, r_encoder_ticks);
-
     int32_t l_ticks = l_encoder_ticks;
     int32_t r_ticks = r_encoder_ticks;
 
@@ -74,39 +72,17 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
         _l_input = _state.l_speed;
         _r_input = _state.r_speed;
 
-        // _l_output = _pid.calculate(_l_setpoint, _l_input);
-        // _r_output = _pid.calculate(_r_setpoint, _r_input);
         _l_pid.compute();
         _r_pid.compute();
 
-        // float left_error = _state.l_ref_speed - _state.l_speed;
-        // _left_integral = _left_integral + left_error;
-        // _left_speed = _left_speed + left_error * _kp + _left_integral * _ki + ((left_error - _left_last_error) * _kd);
-        // _left_last_error = left_error;
-
-        // float right_error = _state.r_ref_speed - _state.r_speed;
-        // _right_integral = _right_integral + right_error;
-        // _right_speed = _right_speed + right_error * _kp + _right_integral * _ki + ((right_error - _right_last_error) * _kd);
-        // _right_last_error = right_error;
-
         _state.l_effort = _l_output;
         _state.r_effort = _r_output;
-        // _state.l_effort = _left_speed * 100.0f;
-        // _state.r_effort = _right_speed * 100.0f;
-
-        // if (_state.l_ref_speed > 0 && _state.l_effort < 100.0f) _state.l_effort = 40.0f;
-        // if (_state.r_ref_speed > 0 && _state.r_effort < 100.0f) _state.r_effort = 40.0f;
-        // if (_state.l_effort > 100.0f) _state.l_effort = 60.0f;
-        // if (_state.r_effort > 100.0f) _state.r_effort = 60.0f;
 
         _l_motor.write(_state.l_effort);
         _r_motor.write(_state.r_effort);
 
         printf("LEncoder ticks: %d, REncoder ticks: %d\nDl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
                 l_encoder_ticks, r_encoder_ticks, dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
-
-        // printf("LTick: %d - RTick: %d \nDl: %d - Dr: %d \nLRefSpeed: %f - RRefSpeed: %f \nLSpeed: %f - RSpeed: %f \nLOutput: %f - ROutput: %f\n--------------------\n",
-        // l_ticks, r_ticks, dl_ticks, dr_ticks, _l_setpoint, _r_setpoint, _l_input, _r_input, _l_output, _r_output);   
     }
 
     _state.l_ticks = l_ticks;

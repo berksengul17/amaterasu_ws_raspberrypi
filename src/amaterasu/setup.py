@@ -23,15 +23,6 @@ setup(
     #tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'mock_publisher=amaterasu.mock_publisher:main',
-            'robot_controller=amaterasu.robot_controller:main',
-            'magnetometer = amaterasu.magnetometer:main',
-            'imu = amaterasu.imu:main',
-            'imu_mag = amaterasu.imu_mag:main',
-            'fuse = amaterasu.fuse:main',
-            'compass = amaterasu.qmc5883l:main',
-            'imu_ahrs = amaterasu.imu_ahrs:main',
-            'img_marg = amaterasu.imu_marg:main',
             'ball_goal_client = amaterasu.ball_goal_client:main'
         ],
     },

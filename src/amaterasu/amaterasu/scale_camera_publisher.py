@@ -22,7 +22,7 @@ class ObjectDetectorPublisher(Node):
         self.ball_publisher = self.create_publisher(Float32MultiArray, "/ball/bounding_box", 10)
         self.robot_publisher = self.create_publisher(Vector3, "/robot/bounding_box", 10)
 
-        # Camera calibration matrices (replace with your actual calibration values)
+        # Camera calibration matrices
         self.camera_matrix = np.array([[1381.31470, 0.0, 648.521209], 
                                         [0.0, 1406.74184, 462.773793], 
                                         [0.0, 0.0, 1.0]])
