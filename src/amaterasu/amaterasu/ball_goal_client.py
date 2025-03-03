@@ -3,133 +3,140 @@ import math
 import time
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Int32MultiArray
 from nav_msgs.msg import Odometry
-
+from geometry_msgs.msg import Vector3
 from amaterasu_interfaces.action import GoToGoal
 
-class BallGoalClient(Node):
-
+class FireCellGoalClient(Node):
     def __init__(self):
-        super().__init__('ball_goal_client')
+        super().__init__('fire_cell_goal_client')
         self._action_client = ActionClient(self, GoToGoal, 'go_to_goal_service')
-        self.ball_sub = self.create_subscription(Float32MultiArray, "/ball/bounding_box", self.ball_callback, 10)
-        self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
-
+        # Subscribe to grid data (fire counts per cell)
+        self.grid_sub = self.create_subscription(
+            Int32MultiArray, "/grid/fire_count", self.grid_callback, 10
+        )
+        # Subscribe to odometry to get current robot pose
+        self.odom_sub = self.create_subscription(
+            Odometry, "/odom", self.odom_callback, 10
+        )
+        
         self.current_pose = [0.0, 0.0]
-        self.current_goal = [0.0, 0.0]
-        self.balls = []
-        self.goal_active = False
-        self.last_update_time = 0  # For throttling updates
-        self.update_interval = 1.0  # Update every 1 second
+        self.grid_data = None
+        self.last_update_time = 0.0
+        self.update_interval = 1.0  # seconds
 
-        self.get_logger().info("Ball goal client initialized.")
+        # Parameters for grid dimensions and platform size (real-world)
+        self.declare_parameter("grid_rows", 10)
+        self.declare_parameter("grid_cols", 10)
+        self.declare_parameter("platform_width", 2.10)
+        self.declare_parameter("platform_height", 1.54)
+        
+        self.get_logger().info("Fire Cell Goal Client initialized.")
 
-    def ball_callback(self, ball_list: Float32MultiArray):
-        """Update the ball list but throttle processing."""
-        # Update ball list
-        new_balls = [(ball_list.data[i], ball_list.data[i + 1]) for i in range(0, len(ball_list.data), 2)]
-        self.balls = new_balls
+    def odom_callback(self, odom_msg):
+        # Update current robot pose
+        self.current_pose[0] = odom_msg.pose.pose.position.x
+        self.current_pose[1] = odom_msg.pose.pose.position.y
 
-        # Throttle processing
+    def grid_callback(self, msg: Int32MultiArray):
+        # Update the grid data (fire counts) from detection node.
+        self.grid_data = msg.data  # Expecting a flat list in row-major order.
         current_time = time.time()
         if current_time - self.last_update_time >= self.update_interval:
             self.last_update_time = current_time
-            self.get_logger().info(f"Processing updated ball list: {self.balls}")
-            self.sort_and_send_ball()
+            self.process_grid_and_send_goal()
 
-    def odom_callback(self, odom: Odometry):
-        """Update the robot's current position."""
-        self.current_pose[0] = odom.pose.pose.position.x
-        self.current_pose[1] = odom.pose.pose.position.y
-
-    def sort_and_send_ball(self):
-        """Sort balls by distance and send the goal to the closest ball."""
-        if not self.balls:
-            self.get_logger().info("No balls detected.")
+    def process_grid_and_send_goal(self):
+        if self.grid_data is None:
             return
 
-        # Sort the balls by their distance to the current pose
-        self.balls.sort(key=lambda ball: math.sqrt((ball[0] - self.current_pose[0])**2 + (ball[1] - self.current_pose[1])**2))
-        closest_ball = self.balls[0]
+        grid_rows = self.get_parameter("grid_rows").value
+        grid_cols = self.get_parameter("grid_cols").value
+        platform_width = self.get_parameter("platform_width").value
+        platform_height = self.get_parameter("platform_height").value
 
-        if self.goal_active:
-            # Check if a new ball is significantly closer than the current goal
-            current_goal_distance = math.sqrt((self.current_goal[0] - self.current_pose[0])**2 + (self.current_goal[1] - self.current_pose[1])**2)
-            closest_ball_distance = math.sqrt((closest_ball[0] - self.current_pose[0])**2 + (closest_ball[1] - self.current_pose[1])**2)
+        cell_width = platform_width / grid_cols
+        cell_height = platform_height / grid_rows
 
-            if closest_ball_distance < current_goal_distance * 0.8:  # Threshold to switch goals
-                self.get_logger().info(f"New closer ball detected: {closest_ball}. Redirecting.")
-                self.current_goal = closest_ball
-                self.send_goal(closest_ball[0], closest_ball[1])
-        else:
-            self.current_goal = closest_ball
-            self.send_goal(closest_ball[0], closest_ball[1])
+        candidate_cells = []
+        epsilon = 1e-3  # To avoid division by zero
+
+        # Evaluate each cell with nonzero fire count.
+        for r in range(grid_rows):
+            for c in range(grid_cols):
+                index = r * grid_cols + c
+                fire_count = self.grid_data[index]
+                if fire_count > 0:
+                    # Compute cell center in real-world coordinates.
+                    center_x = (c + 0.5) * cell_width
+                    center_y = (r + 0.5) * cell_height
+                    # Compute Euclidean distance from current robot pose to cell center.
+                    distance = math.sqrt((center_x - self.current_pose[0])**2 + 
+                                         (center_y - self.current_pose[1])**2)
+                    # Compute score: lower score is preferred.
+                    score = distance / (fire_count + epsilon)
+                    candidate_cells.append({
+                        'row': r,
+                        'col': c,
+                        'center': (center_x, center_y),
+                        'fire_count': fire_count,
+                        'distance': distance,
+                        'score': score
+                    })
+
+        if not candidate_cells:
+            self.get_logger().info("No active fire cells detected.")
+            return
+
+        # Sort candidate cells by score (lower score means higher priority).
+        candidate_cells.sort(key=lambda cell: cell['score'])
+        best_cell = candidate_cells[0]
+        self.get_logger().info(
+            f"Selected cell at {best_cell['center']} with fire count {best_cell['fire_count']} "
+            f"and score {best_cell['score']:.2f}."
+        )
+        self.send_goal(best_cell['center'][0], best_cell['center'][1])
 
     def send_goal(self, x, y):
-        """Send a goal to the action server."""
-        self.goal_active = True
         goal_msg = GoToGoal.Goal()
         goal_msg.x = x
         goal_msg.y = y
-
-        self.get_logger().info(f'Sending goal: x={goal_msg.x}, y={goal_msg.y}')
-
-        if self._action_client.wait_for_server():
-            send_goal_future = self._action_client.send_goal_async(
-                goal_msg,
-                feedback_callback=self.feedback_callback
-            )
+        self.get_logger().info(f"Sending goal to cell center at x={x:.2f}, y={y:.2f}")
+        if self._action_client.wait_for_server(timeout_sec=5.0):
+            send_goal_future = self._action_client.send_goal_async(goal_msg, feedback_callback=self.feedback_callback)
             send_goal_future.add_done_callback(self.goal_response_callback)
         else:
-            self.get_logger().error("Action server not available. Cannot send goal.")
-            self.goal_active = False  # Reset the flag if the server is unavailable
+            self.get_logger().error("Action server not available.")
 
     def goal_response_callback(self, future):
-        """Handle the response from the action server."""
         goal_handle = future.result()
         if not goal_handle.accepted:
-            self.goal_active = False
-            self.get_logger().info('Goal rejected.')
+            self.get_logger().info("Goal rejected.")
             return
-
-        self.get_logger().info('Goal accepted. Waiting for result...')
+        self.get_logger().info("Goal accepted. Waiting for result...")
         get_result_future = goal_handle.get_result_async()
         get_result_future.add_done_callback(self.result_callback)
 
     def result_callback(self, future):
-        """Handle the result from the action server."""
         result = future.result().result
         if result.goal_reached:
-            self.get_logger().info(f"Goal reached successfully at {self.current_goal}. Removing it from the list.")
-            # Remove the current goal from the list
-            self.balls = [ball for ball in self.balls if ball != self.current_goal]
-            self.current_goal = [0.0, 0.0]
-            time.sleep(2)
+            self.get_logger().info("Goal reached successfully.")
         else:
-            self.get_logger().info(f"Failed to reach goal at {self.current_goal}.")
-
-        self.goal_active = False  # Allow the next goal to be sent
-        if self.balls:
-            self.get_logger().info("Moving to the next closest ball.")
-            self.sort_and_send_ball()
-        else:
-            self.get_logger().info("All goals completed.")
+            self.get_logger().info("Failed to reach goal.")
 
     def feedback_callback(self, feedback_msg):
-        """Handle feedback from the action server."""
         feedback = feedback_msg.feedback
-        self.get_logger().info(f"Feedback: Current position ({feedback.current_x}, {feedback.current_y}), Distance: {feedback.distance}")
+        self.get_logger().info(
+            f"Feedback: Current position ({feedback.current_x}, {feedback.current_y}), Distance: {feedback.distance}"
+        )
 
 def main(args=None):
     rclpy.init(args=args)
-    client = BallGoalClient()
-
-    rclpy.spin(client)
-
-    client.destroy_node()
+    node = FireCellGoalClient()
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
