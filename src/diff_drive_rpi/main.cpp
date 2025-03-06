@@ -9,7 +9,7 @@
 #include "robot_pins.h"
 #include "dc_motor.h"
 #include "encoder.h"
-#include <pigpiod_if2.h>
+#include <wiringPi.h>
 #include <cmath>
 #include <stdexcept>
 #include <array>
@@ -28,7 +28,7 @@ public:
         kd1_(declare_parameter("kd", 0.0)),
         robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
                     {PWM_FREQUENCY, R_ENB_PIN, R_IN3_PIN, R_IN4_PIN}},
-        robot_(pigpio_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
+        robot_(wiringpi_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
     {
 
         // Publisher for odometry
@@ -58,15 +58,15 @@ public:
 private:
     void setup() {
         // Initialize pigpio
-        pigpio_handle_ = pigpio_start(NULL, NULL);
-        if (pigpio_handle_ < 0) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to initialize pigpio.");
-            throw std::runtime_error("Failed to initialize pigpio.");
+        wiringpi_handle_ = wiringPiSetupPinType(WPI_PIN_BCM);
+        if (wiringpi_handle_ < 0) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to initialize wiringpi.");
+            throw std::runtime_error("Failed to initialize wiringpi.");
         }
 
-        // Initialize encoders dynamically after pigpio_handle_ is ready
-        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN, pigpio_handle_);
-        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN, pigpio_handle_);
+        // Initialize encoders dynamically after wiringpi_handle_ is ready
+        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN, wiringpi_handle_);
+        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN, wiringpi_handle_);
 
         // Initialize encoders
         left_encoder_->set_pulses(0);
@@ -221,7 +221,7 @@ private:
     OnSetParametersCallbackHandle::SharedPtr on_set_parameters_callback_handle_;
 
     // Encoders and Robot
-    int pigpio_handle_;
+    int wiringpi_handle_;
     RobotPins robot_pins_;
     std::unique_ptr<Encoder> left_encoder_;
     std::unique_ptr<Encoder> right_encoder_;
