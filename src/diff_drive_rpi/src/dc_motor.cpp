@@ -15,15 +15,15 @@
 DCMotor::DCMotor(uint en_pin, int in1_pin, int in2_pin, int m_isConnectionOk, int pwmFrequency)
 :_en_pin(en_pin), _in1_pin(in1_pin), _in2_pin(in2_pin), _m_isConnectionOk(m_isConnectionOk), _pwmFrequency(pwmFrequency)
 {
-    if (m_isConnectionOk < 0)
-    {
-        throw std::runtime_error("Failed to initialize Raspberry Pi using Pigpio");
-    } 
+    int wiringpi_handle_ = wiringPiSetupPinType(WPI_PIN_BCM);
+    if (wiringpi_handle_ < 0) {
+        throw std::runtime_error("Failed to initialize wiringpi.");
+    }
     else 
     {
         pinMode(this->_in1_pin, OUTPUT);
         pinMode(this->_in2_pin, OUTPUT);
-        pinMode(this->_en_pin, PWM_MS_OUTPUT);
+        pinMode(this->_en_pin, PWM_OUTPUT);
 
         // Nasıl kullanıldığını yüzde yüz anlamadım
         pwmSetRange(TOP);
@@ -33,8 +33,9 @@ DCMotor::DCMotor(uint en_pin, int in1_pin, int in2_pin, int m_isConnectionOk, in
     }
 }
 
-void DCMotor::write_int16(int16_t pwm)
+void DCMotor::write_int(int pwm)
 {
+    printf("DC MOTOR PWM: %d", pwm);
     // backwards
     if (pwm < 0)
     {
@@ -64,7 +65,7 @@ void DCMotor::write(float duty_cycle)
     // if (duty_cycle > -0.15f && duty_cycle < 0) 
     //     duty_cycle = -0.15f;
 
-    write_int16(static_cast<int16_t>(duty_cycle * TOP));
+    write_int(static_cast<int>(duty_cycle * TOP));
 }
 
 

@@ -13,7 +13,7 @@ class DCMotor {
 public:
     DCMotor(uint en_pin, int in1_pin, int in2_pin, 
     int m_isConnectionOk, int pwmFrequency);
-    void write_int16(int16_t pwm);
+    void write_int(int pwm);
     void write(float duty_cycle);
 
 private:

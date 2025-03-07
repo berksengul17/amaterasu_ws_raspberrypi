@@ -7,17 +7,17 @@
 
 class Encoder {
 public:
-    Encoder(uint out, int m_isConnectionOk);
+    Encoder(int out);
     void set_pulses(int new_pulses);
     int32_t get_pulses() const;
 
 private:
-    uint _out;
-    int _m_isConnectionOk;
+    int _out;
+    int _last_state;
+    uint32_t _last_time;
     int32_t _pulses;
-    int _last_level;
 
-    static std::unordered_map<uint, Encoder*> encoders;
+    static std::unordered_map<int, Encoder*> encoders;
     static void handleInterruptStatic();
     void incrementTicks();
 };

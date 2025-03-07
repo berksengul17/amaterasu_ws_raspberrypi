@@ -36,7 +36,7 @@ ament_target_dependencies(${PROJECT_NAME}
 )
 
 # Link pigpio library
-target_link_libraries(${PROJECT_NAME} pigpiod_if2)
+target_link_libraries(${PROJECT_NAME} wiringPi)
 
 install(TARGETS diff_drive_rpi
   DESTINATION lib/${PROJECT_NAME}
