@@ -23,7 +23,9 @@ setup(
     #tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ball_goal_client = amaterasu.ball_goal_client:main'
+            'ball_goal_client = amaterasu.ball_goal_client:main',
+            'ekf = amaterasu.bekir_ekf:main',
+            'imu_pub = amaterasu.imu_pub:main'
         ],
     },
 )

@@ -65,8 +65,8 @@ private:
         }
 
         // Initialize encoders dynamically after wiringpi_handle_ is ready
-        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN, wiringpi_handle_);
-        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN, wiringpi_handle_);
+        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN);
+        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN);
 
         // Initialize encoders
         left_encoder_->set_pulses(0);
@@ -167,16 +167,16 @@ private:
         auto timestamp = this->get_clock()->now();
 
         // Create and send transform
-        geometry_msgs::msg::TransformStamped transform;
-        transform.header.stamp = timestamp;
-        transform.header.frame_id = "odom";
-        transform.child_frame_id = "base_link";
-        transform.transform.translation.x = odometry.x_pos;
-        transform.transform.translation.y = odometry.y_pos;
-        transform.transform.translation.z = 0.0325; // Fixed height of the robot
-        transform.transform.rotation = robot_orientation;
+        // geometry_msgs::msg::TransformStamped transform;
+        // transform.header.stamp = timestamp;
+        // transform.header.frame_id = "odom";
+        // transform.child_frame_id = "base_link";
+        // transform.transform.translation.x = odometry.x_pos;
+        // transform.transform.translation.y = odometry.y_pos;
+        // transform.transform.translation.z = 0.0325; // Fixed height of the robot
+        // transform.transform.rotation = robot_orientation;
 
-        tf_broadcaster_->sendTransform(transform);
+        // tf_broadcaster_->sendTransform(transform);
 
         // Create and publish odometry message
         nav_msgs::msg::Odometry odom_msg;

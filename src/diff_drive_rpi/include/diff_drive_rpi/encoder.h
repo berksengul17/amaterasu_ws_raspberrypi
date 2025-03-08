@@ -13,9 +13,9 @@ public:
 
 private:
     int _out;
+    int32_t _pulses;
     int _last_state;
     uint32_t _last_time;
-    int32_t _pulses;
 
     static std::unordered_map<int, Encoder*> encoders;
     static void handleInterruptStatic();

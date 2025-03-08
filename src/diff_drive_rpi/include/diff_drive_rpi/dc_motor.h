@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-#define TOP 1024
+#define TOP 200
 
 class DCMotor {
 public:

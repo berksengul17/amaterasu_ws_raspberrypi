@@ -35,7 +35,6 @@ DCMotor::DCMotor(uint en_pin, int in1_pin, int in2_pin, int m_isConnectionOk, in
 
 void DCMotor::write_int(int pwm)
 {
-    printf("DC MOTOR PWM: %d", pwm);
     // backwards
     if (pwm < 0)
     {

@@ -4,23 +4,27 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Quaternion, TransformStamped
+from tf_transformations import quaternion_from_euler
+from tf2_ros import TransformBroadcaster
+from builtin_interfaces.msg import Time
 
 class ExtendedKalmanFilter(Node):
     def __init__(self):
         super().__init__("ekf")
 
         # initial pose
-        self.x = 0
-        self.y = 0
-        self.theta = 0
+        self.x = 0.0
+        self.y = 0.0
+        self.theta = 0.0
 
         # initial sensor values
-        self.v_odom = 0
-        self.w_odom = 0
-        self.w_imu = 0
+        self.v_odom = 0.0
+        self.w_odom = 0.0
+        self.w_imu = 0.0
 
         # state vector -> x, y, yaw, v, w
-        self.mu = np.array([self.x, self.y, self.theta, 0, 0])
+        self.mu = np.array([self.x, self.y, self.theta, 0.0, 0.0])
 
         # sensor observations
         self.z_k = np.array([self.v_odom, self.w_odom, self.w_imu]) 
@@ -54,6 +58,9 @@ class ExtendedKalmanFilter(Node):
 
         self.imu_sub = self.create_subscription(Imu, "/imu/z", self.imu_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, "/odom", self.odom_callback, 10)
+
+        self.odom_pub = self.create_publisher(Odometry, "/ekf_odom", 10)
+        self.odomBroadcaster = TransformBroadcaster(self)
         
         self.dt = 0.01 # 10ms
         self.last_time = time.time()
@@ -68,8 +75,8 @@ class ExtendedKalmanFilter(Node):
 
     def run(self):
         curr_time = time.time()
-        dk = curr_time - last_time
-        last_time = time.time()
+        dk = curr_time - self.last_time
+        self.last_time = time.time()
         x_k, y_k, theta_k, v_k, w_k = self.mu
         
         self.z_k = np.array([self.v_odom, self.w_odom, self.w_imu])
@@ -102,6 +109,62 @@ class ExtendedKalmanFilter(Node):
         self.mu = self.mu + K_k.dot(measurement_residual)
 
         self.sigma_sq = (np.eye(len(self.mu))-K_k.dot(self.H)).dot(self.sigma_sq)
+
+        odom = Odometry()
+        #Publish the new odom message based on the integrated odom values
+        odom.header.stamp = Time()
+        odom.header.stamp.sec = int(curr_time)
+        odom.header.stamp.nanosec = int((curr_time % 1) * 1e9)
+
+        odom.pose.pose.position.x = float(self.mu[0])
+        odom.pose.pose.position.y = float(self.mu[1])
+        odom.pose.pose.position.z = 0.0
+
+
+        qt_array = quaternion_from_euler(0,0,self.mu[2])
+        quaternion = Quaternion(x=qt_array[0], y=qt_array[1], z=qt_array[2], w=qt_array[3])
+        # quaternion.z = sin(self.mu[2]/2.0)
+        # quaternion.w = cos(self.mu[2]/2.0)
+        odom.pose.pose.orientation = quaternion
+
+        odom.pose.covariance = [self.sigma_sq[0,0], 0, 0, 0, 0, 0, #uncertainty in x
+                                0, self.sigma_sq[1,1], 0, 0, 0, 0, #uncertainty in y
+                                0, 0, 0, 0, 0, 0, #uncertainty in z
+                                0, 0, 0, 0, 0, 0, #uncertainty in roll
+                                0, 0, 0, 0, 0, 0, #uncertainty in pitch
+                                0, 0, 0, 0, 0, self.sigma_sq[2,2]] #uncertainty in yaw
+
+        #The velocities are in child frame base_link
+        odom.twist.twist.linear.x = self.mu[3]
+        odom.twist.twist.angular.z = self.mu[4] 
+
+        odom.twist.covariance = [self.sigma_sq[3,3], 0, 0, 0, 0, 0, #uncertainty in x_dot
+                                0, 0, 0, 0, 0, 0, #uncertainty in y_dot
+                                0, 0, 0, 0, 0, 0, #uncertainty in z_dot
+                                0, 0, 0, 0, 0, 0, #uncertainty in change in roll
+                                0, 0, 0, 0, 0, 0, #uncertainty in change in pitch
+                                0, 0, 0, 0, 0, self.sigma_sq[4,4]] #uncertainty in change in yaw
+
+        tf = TransformStamped()
+        tf.header.stamp = Time()
+        tf.header.stamp.sec = int(curr_time)
+        tf.header.stamp.nanosec = int((curr_time % 1) * 1e9)
+        
+        tf.header.frame_id = "odom"
+        tf.child_frame_id = "base_link"
+
+        tf.transform.translation.x = float(self.mu[0])
+        tf.transform.translation.y = float(self.mu[1])
+        tf.transform.translation.z = 0.0
+         
+        tf.transform.rotation.x = quaternion.x
+        tf.transform.rotation.y = quaternion.x
+        tf.transform.rotation.z = quaternion.z
+        tf.transform.rotation.w = quaternion.w
+
+        
+        self.odomBroadcaster.sendTransform(tf)
+        self.odom_pub.publish(odom)
 
 def main(args=None):
     rclpy.init(args=args)
