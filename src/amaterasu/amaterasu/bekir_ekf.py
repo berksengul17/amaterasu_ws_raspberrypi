@@ -62,7 +62,7 @@ class ExtendedKalmanFilter(Node):
         self.odom_pub = self.create_publisher(Odometry, "/ekf_odom", 10)
         self.odomBroadcaster = TransformBroadcaster(self)
         
-        self.dt = 0.01 # 10ms
+        self.dt = 0.5 # 10ms
         self.last_time = time.time()
         self.timer = self.create_timer(self.dt, self.run)
 
@@ -71,7 +71,8 @@ class ExtendedKalmanFilter(Node):
 
     def odom_callback(self,msg):
         self.w_odom = msg.twist.twist.angular.z
-        self.v_odom = msg.twist.twist.linear.x 
+        self.v_odom = msg.twist.twist.linear.x
+        print(f"Odom v: {self.v_odom} | Odom w: {self.w_odom}")
 
     def run(self):
         curr_time = time.time()

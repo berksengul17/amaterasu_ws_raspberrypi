@@ -1,58 +1,62 @@
 #include "encoder.h"
 #include <iostream>
-#include <unordered_map>
 #include <stdexcept>
 #include <chrono>
+#include <wiringPi.h>
+#include <unistd.h>  // For usleep()
 
-std::unordered_map<int, Encoder*> Encoder::encoders;
+#define DEBOUNCE_TIME_MS 1  // Ignore signals faster than 1ms
 
-#define DEBOUNCE_TIME_MS 1  // Ignore signals faster than 5ms
-
-Encoder::Encoder(int out) : 
-_out(out), _pulses(0), _last_state(digitalRead(out)), _last_time(0) {
-
+Encoder::Encoder(int pin) : _pin(pin), _pulses(0), _running(false) {
     if (wiringPiSetupGpio() == -1) {
         throw std::runtime_error("Failed to initialize WiringPi.");
     }
 
-    pinMode(_out, INPUT);
-    pullUpDnControl(_out, PUD_UP);  // Enable pull-up resistor
-
-    encoders[_out] = this;
-
-    wiringPiISR(_out, INT_EDGE_BOTH, &Encoder::handleInterruptStatic);
+    pinMode(_pin, INPUT);
+    pullUpDnControl(_pin, PUD_UP);  // Enable pull-up resistor
 }
 
-void Encoder::handleInterruptStatic() {
-    for (auto& [pin, encoder] : encoders) {
-        int prev_state = encoder->_last_state;
-        int current_state = digitalRead(pin);
-        uint32_t now = millis();
+// **Thread Function for Counting Encoder Pulses**
+void Encoder::countTicks() {
+    bool last_state = digitalRead(_pin);
 
-        if ((now - encoder->_last_time) > DEBOUNCE_TIME_MS) {
-            if (current_state != prev_state) {
-                encoder->_last_state = current_state;
-                encoder->_last_time = now;
+    while (_running) {
+        bool current_state = digitalRead(_pin);
 
-                if (prev_state != current_state) {  // Any state change
-                    encoder->incrementTicks();
-                }                
-            }
+        if (current_state != last_state) {  // Detect edge change
+            _pulses++;
         }
+
+        last_state = current_state;
+        usleep(1000);  // Small delay (1ms) to balance accuracy and CPU usage
     }
 }
 
-// Increment tick count
-void Encoder::incrementTicks() {
-    _pulses++;
+// **Start the encoder counting thread**
+void Encoder::start() {
+    _running = true;
+    _thread = std::thread(&Encoder::countTicks, this);
 }
 
-// Set pulses manually (for resetting)
+// **Stop the encoder counting thread**
+void Encoder::stop() {
+    _running = false;
+    if (_thread.joinable()) {
+        _thread.join();
+    }
+}
+
+// **Get current pulse count**
+int32_t Encoder::get_pulses() const {
+    return _pulses.load();
+}
+
+// **Manually set pulses (for reset)**
 void Encoder::set_pulses(int new_pulses) {
     _pulses = new_pulses;
 }
 
-// Get pulse count
-int32_t Encoder::get_pulses() const {
-    return _pulses;
+// **Destructor to ensure proper cleanup**
+Encoder::~Encoder() {
+    stop();
 }

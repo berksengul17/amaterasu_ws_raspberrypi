@@ -1,25 +1,26 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-#include <wiringPi.h>
-#include <stdint.h>
-#include <unordered_map>
+#include <atomic>
+#include <thread>
 
 class Encoder {
 public:
-    Encoder(int out);
-    void set_pulses(int new_pulses);
+    Encoder(int pin);
+    ~Encoder();
+
+    void start();
+    void stop();
     int32_t get_pulses() const;
+    void set_pulses(int new_pulses);
 
 private:
-    int _out;
-    int32_t _pulses;
-    int _last_state;
-    uint32_t _last_time;
+    int _pin;
+    std::atomic<int32_t> _pulses;
+    std::atomic<bool> _running;
+    std::thread _thread;
 
-    static std::unordered_map<int, Encoder*> encoders;
-    static void handleInterruptStatic();
-    void incrementTicks();
+    void countTicks();
 };
 
-#endif  // ENCODER_H
+#endif // ENCODER_H

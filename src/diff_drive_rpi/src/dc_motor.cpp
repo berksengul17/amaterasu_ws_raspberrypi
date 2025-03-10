@@ -26,7 +26,7 @@ DCMotor::DCMotor(uint en_pin, int in1_pin, int in2_pin, int m_isConnectionOk, in
         pinMode(this->_en_pin, PWM_OUTPUT);
 
         // Nasıl kullanıldığını yüzde yüz anlamadım
-        pwmSetRange(TOP);
+        pwmSetRange(1024);
         pwmSetClock(192);
 
         pwmWrite(this->_en_pin, 0);

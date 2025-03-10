@@ -26,8 +26,8 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 {
     _l_motor.write(0.0f);
     _r_motor.write(0.0f);
-    _l_pid.set_output_limits(-1.0f, 1.0f);
-    _r_pid.set_output_limits(-1.0f, 1.0f);
+    _l_pid.set_output_limits(0.15f, 1.0f);
+    _r_pid.set_output_limits(0.15f, 1.0f);
     _l_setpoint = 0;
     _r_setpoint = 0;
     _left_last_error = 0.0f;
@@ -66,8 +66,10 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
         _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
         _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
 
-        _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
-        _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
+        // _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
+        // _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
+        _odom.v = (_state.l_speed + _state.r_speed) / 2.0f;
+        _odom.w = (_state.r_speed - _state.l_speed) / ROBOT_WHEEL_SEPARATION;
 
         _l_input = _state.l_speed;
         _r_input = _state.r_speed;

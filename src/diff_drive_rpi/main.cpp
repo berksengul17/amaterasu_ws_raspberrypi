@@ -15,7 +15,7 @@
 #include <array>
 
 #define MOTOR_PPR 20.0f
-#define SAMPLE_TIME_MS 200
+#define SAMPLE_TIME_MS 500
 #define PWM_FREQUENCY 800
 
 class RobotNode : public rclcpp::Node {
@@ -55,6 +55,10 @@ public:
         setup();
     }
 
+    ~RobotNode() {
+        stopEncoders();
+    }
+
 private:
     void setup() {
         // Initialize pigpio
@@ -72,8 +76,17 @@ private:
         left_encoder_->set_pulses(0);
         right_encoder_->set_pulses(0);
 
+        left_encoder_->start();
+        right_encoder_->start();
+
         RCLCPP_INFO(this->get_logger(), "Setup complete.");
     }
+
+    void stopEncoders() {
+        left_encoder_->stop();
+        right_encoder_->stop();
+    }
+
 
     rcl_interfaces::msg::SetParametersResult parameterCallback(const std::vector<rclcpp::Parameter> &parameters) {
         rcl_interfaces::msg::SetParametersResult result;
