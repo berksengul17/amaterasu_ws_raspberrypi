@@ -19,30 +19,41 @@ Robot::Robot(
 _kp(kp), _kd(kd), _ki(ki), _sample_time_ms(sample_time_ms),
 _l_input(0.0f), _l_output(0.0f), _l_setpoint(0.0f),
 _r_input(0.0f), _r_output(0.0f), _r_setpoint(0.0f),
-_l_motor(pins.left.en, pins.left.in1, pins.left.in2, m_isConnectionOk, pins.left.pwm),
-_r_motor(pins.right.en, pins.right.in1, pins.right.in2, m_isConnectionOk, pins.right.pwm),
+_fl_motor(pins.front_left.en, pins.front_left.in1, pins.front_left.in2, m_isConnectionOk, pins.front_left.pwm),
+_fr_motor(pins.front_right.en, pins.front_right.in1, pins.front_right.in2, m_isConnectionOk, pins.front_right.pwm),
+_rl_motor(pins.rear_left.en, pins.rear_left.in1, pins.rear_left.in2, m_isConnectionOk, pins.rear_left.pwm),
+_rr_motor(pins.rear_right.en, pins.rear_right.in1, pins.rear_right.in2, m_isConnectionOk, pins.rear_right.pwm),
 _l_pid(&_l_input, &_l_output, &_l_setpoint, kp, ki, kd, sample_time_ms),
 _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 {
-    _l_motor.write(0.0f);
-    _r_motor.write(0.0f);
-    _l_pid.set_output_limits(0.15f, 1.0f);
-    _r_pid.set_output_limits(0.15f, 1.0f);
+    _fl_motor.write(0.0f);
+    _fr_motor.write(0.0f);
+    _rl_motor.write(0.0f);
+    _rr_motor.write(0.0f);
+   
+    _l_pid.set_output_limits(-1.0f, 1.0f);
+    _r_pid.set_output_limits(-1.0f, 1.0f);
+   
     _l_setpoint = 0;
     _r_setpoint = 0;
+   
     _left_last_error = 0.0f;
     _right_last_error = 0.0f;
+   
     _left_integral = 0.0f;
     _right_integral = 0.0f;
+   
     _left_speed = 0.0f;
     _right_speed = 0.0f;
+   
     _pid_rate = float(sample_time_ms) / 1000.0f;
 }
 
-void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
+void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
+    uint rl_encoder_ticks, uint rr_encoder_ticks)
 {
-    int32_t l_ticks = l_encoder_ticks;
-    int32_t r_ticks = r_encoder_ticks;
+    int32_t l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2;
+    int32_t r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2;
 
     _state.l_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * l_ticks / ROBOT_MOTOR_PPR;
     _state.r_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * r_ticks / ROBOT_MOTOR_PPR;
@@ -57,9 +68,12 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
     _state.r_ref_speed = _r_setpoint;
 
     if (_state.l_ref_speed <= 0.003 && _state.r_ref_speed <= 0.003 &&
-        l_encoder_ticks > 0 && r_encoder_ticks > 0) {
-        _l_motor.write(0.0f); // Fully stop the left motor
-        _r_motor.write(0.0f); // Fully stop the right motor
+        fl_encoder_ticks > 0 && fr_encoder_ticks > 0 &&
+        rl_encoder_ticks > 0 && rr_encoder_ticks > 0) {
+        _fl_motor.write(0.0f);
+        _rl_motor.write(0.0f);
+        _fr_motor.write(0.0f);
+        _rr_motor.write(0.0f);
         // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     }
     else {
@@ -80,11 +94,14 @@ void Robot::updatePid(uint l_encoder_ticks, uint r_encoder_ticks)
         _state.l_effort = _l_output;
         _state.r_effort = _r_output;
 
-        _l_motor.write(_state.l_effort);
-        _r_motor.write(_state.r_effort);
+        _fl_motor.write(_state.l_effort);
+        _rl_motor.write(_state.l_effort);
 
-        printf("LEncoder ticks: %d, REncoder ticks: %d\nDl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
-                l_encoder_ticks, r_encoder_ticks, dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
+        _fr_motor.write(_state.r_effort);
+        _rr_motor.write(_state.r_effort);
+
+        printf("Front Left Encoder ticks: %d, Rear Left Encoder ticks: %d\nFront Right Encoder ticks: %d, Rear Right Encoder ticks: %d\nDl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
+                fl_encoder_ticks, rl_encoder_ticks, fr_encoder_ticks, rr_encoder_ticks, dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
     }
 
     _state.l_ticks = l_ticks;

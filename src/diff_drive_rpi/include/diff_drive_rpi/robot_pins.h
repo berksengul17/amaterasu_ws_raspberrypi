@@ -5,15 +5,23 @@
 #ifndef DIFF_DRIVE_ROBOT_PINS_H
 #define DIFF_DRIVE_ROBOT_PINS_H
 
-#define L_ENA_PIN 12
-#define L_IN1_PIN 25
-#define L_IN2_PIN 24
+#define FL_EN_PIN 13
+#define FL_IN1_PIN 17
+#define FL_IN2_PIN 27
+#define FR_EN_PIN 12
+#define FR_IN1_PIN 22
+#define FR_IN2_PIN 23
 
-#define R_ENB_PIN 13
-#define R_IN3_PIN 22
-#define R_IN4_PIN 27
+#define RL_EN_PIN 13
+#define RL_IN1_PIN 26
+#define RL_IN2_PIN 16
+#define RR_EN_PIN 12
+#define RR_IN1_PIN 24
+#define RR_IN2_PIN 25
 
-#define L_ENC_PIN 16
-#define R_ENC_PIN 26
+#define FL_ENC_PIN 6
+#define FR_ENC_PIN 5
+#define RL_ENC_PIN 8
+#define RR_ENC_PIN 14
 
 #endif //DIFF_DRIVE_ROBOT_PINS_H

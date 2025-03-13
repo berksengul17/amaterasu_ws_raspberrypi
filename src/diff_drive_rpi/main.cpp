@@ -26,8 +26,10 @@ public:
         kp1_(declare_parameter("kp", 9.0)),
         ki1_(declare_parameter("ki", 0.03)),
         kd1_(declare_parameter("kd", 0.0)),
-        robot_pins_{{PWM_FREQUENCY, L_ENA_PIN, L_IN1_PIN, L_IN2_PIN},
-                    {PWM_FREQUENCY, R_ENB_PIN, R_IN3_PIN, R_IN4_PIN}},
+        robot_pins_{{PWM_FREQUENCY, FL_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
+                    {PWM_FREQUENCY, FR_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
+                    {PWM_FREQUENCY, RL_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
+                    {PWM_FREQUENCY, RR_EN_PIN, RR_IN1_PIN, RR_IN2_PIN}},
         robot_(wiringpi_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
     {
 
@@ -69,22 +71,30 @@ private:
         }
 
         // Initialize encoders dynamically after wiringpi_handle_ is ready
-        left_encoder_ = std::make_unique<Encoder>(L_ENC_PIN);
-        right_encoder_ = std::make_unique<Encoder>(R_ENC_PIN);
+        front_left_encoder_ = std::make_unique<Encoder>(FL_ENC_PIN);
+        front_right_encoder_ = std::make_unique<Encoder>(FR_ENC_PIN);
+        rear_left_encoder_ = std::make_unique<Encoder>(RL_ENC_PIN);
+        rear_right_encoder_ = std::make_unique<Encoder>(RR_ENC_PIN);
 
         // Initialize encoders
-        left_encoder_->set_pulses(0);
-        right_encoder_->set_pulses(0);
+        front_left_encoder_->set_pulses(0);
+        front_right_encoder_->set_pulses(0);
+        rear_left_encoder_->set_pulses(0);
+        rear_right_encoder_->set_pulses(0);
 
-        left_encoder_->start();
-        right_encoder_->start();
+        front_left_encoder_->start();
+        front_right_encoder_->start();
+        rear_left_encoder_->start();
+        rear_right_encoder_->start();
 
         RCLCPP_INFO(this->get_logger(), "Setup complete.");
     }
 
     void stopEncoders() {
-        left_encoder_->stop();
-        right_encoder_->stop();
+        front_left_encoder_->stop();
+        front_right_encoder_->stop();
+        rear_left_encoder_->stop();
+        rear_right_encoder_->stop();
     }
 
 
@@ -163,7 +173,8 @@ private:
     void update() {
         // Update robot state
         robot_.setUnicycle(linear_, angular_);
-        robot_.updatePid(left_encoder_->get_pulses(), right_encoder_->get_pulses());
+        robot_.updatePid(front_left_encoder_->get_pulses(), front_right_encoder_->get_pulses(),
+                        rear_left_encoder_->get_pulses(), rear_right_encoder_->get_pulses());
 
         // Get the current robot state and odometry
         // auto state = robot_.getState();
@@ -236,8 +247,10 @@ private:
     // Encoders and Robot
     int wiringpi_handle_;
     RobotPins robot_pins_;
-    std::unique_ptr<Encoder> left_encoder_;
-    std::unique_ptr<Encoder> right_encoder_;
+    std::unique_ptr<Encoder> front_left_encoder_;
+    std::unique_ptr<Encoder> front_right_encoder_;
+    std::unique_ptr<Encoder> rear_left_encoder_;
+    std::unique_ptr<Encoder> rear_right_encoder_;
     Robot robot_;
 };
 

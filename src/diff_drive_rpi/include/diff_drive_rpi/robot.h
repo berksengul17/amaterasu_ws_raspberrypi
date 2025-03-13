@@ -31,8 +31,10 @@ struct MotorPins
 
 struct RobotPins
 {
-    MotorPins left;
-    MotorPins right;
+    MotorPins front_left;
+    MotorPins front_right;
+    MotorPins rear_left;
+    MotorPins rear_right;
 };
 
 struct RobotState
@@ -74,7 +76,8 @@ public:
     RobotState getState();
     RobotOdometry getOdometry();
     void setPidTunings(float kp, float kd, float ki);
-    void updatePid(uint l_encoder_ticks, uint r_encoder_ticks);
+    void updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
+        uint rl_encoder_ticks, uint rr_encoder_ticks);
     void updatePidParams(float kp, float kd, float ki);
 
 private:
@@ -98,8 +101,10 @@ private:
     float _left_speed;
     float _right_speed;
 
-    DCMotor _l_motor;
-    DCMotor _r_motor;
+    DCMotor _fl_motor;
+    DCMotor _fr_motor;
+    DCMotor _rl_motor;
+    DCMotor _rr_motor;
     PID _l_pid;
     PID _r_pid;
     RobotState _state;
