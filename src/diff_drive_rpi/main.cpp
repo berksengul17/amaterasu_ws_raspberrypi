@@ -23,13 +23,13 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 9.0)),
-        ki1_(declare_parameter("ki", 0.03)),
+        kp1_(declare_parameter("kp", 1.4)),
+        ki1_(declare_parameter("ki", 0.01)),
         kd1_(declare_parameter("kd", 0.0)),
-        robot_pins_{{PWM_FREQUENCY, FL_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
-                    {PWM_FREQUENCY, FR_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
-                    {PWM_FREQUENCY, RL_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
-                    {PWM_FREQUENCY, RR_EN_PIN, RR_IN1_PIN, RR_IN2_PIN}},
+        robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
+                    {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
+                    {PWM_FREQUENCY, L_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
+                    {PWM_FREQUENCY, R_EN_PIN, RR_IN1_PIN, RR_IN2_PIN}},
         robot_(wiringpi_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
     {
 

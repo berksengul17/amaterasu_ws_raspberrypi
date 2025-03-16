@@ -5,7 +5,7 @@
 #include <wiringPi.h>
 #include <unistd.h>  // For usleep()
 
-#define DEBOUNCE_TIME_MS 1  // Ignore signals faster than 1ms
+#define DEBOUNCE_TIME_MS 1000  // Ignore signals faster than 1ms
 
 Encoder::Encoder(int pin) : _pin(pin), _pulses(0), _running(false) {
     if (wiringPiSetupGpio() == -1) {
@@ -28,7 +28,7 @@ void Encoder::countTicks() {
         }
 
         last_state = current_state;
-        usleep(1000);  // Small delay (1ms) to balance accuracy and CPU usage
+        usleep(DEBOUNCE_TIME_MS);  // Small delay (1ms) to balance accuracy and CPU usage
     }
 }
 
