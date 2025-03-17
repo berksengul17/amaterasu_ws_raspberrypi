@@ -94,13 +94,13 @@ private:
         // **Correct the stopping condition**
         double error = fabs(fabs(target_yaw) - fabs(estimated_yaw));
         
-        if (turning && fabs(error) <= 3.0) { 
+        if (turning && fabs(error) <= 2.0) { 
             stopMotors();
             turning = false;  // Stop turning
             RCLCPP_INFO(this->get_logger(), "Turn Completed! Estimated Yaw = %.2f degrees", estimated_yaw);
             timer->cancel(); // Disable the timer
         } else {
-            changeSpeed(static_cast<int>(error * 10.0)); // Increase P-Gain for faster correction
+            changeSpeed(static_cast<int>(error * 1.5)); // Increase P-Gain for faster correction
         }
     }
     

@@ -55,15 +55,12 @@ void DCMotor::write(float duty_cycle)
 {
     if (duty_cycle > 1.0f)
         duty_cycle = 1.0f;
-    if (duty_cycle < 0.0f)
-        duty_cycle = 0.15f;
+    // if (duty_cycle > 0 && duty_cycle < 0.4f)
+    //     duty_cycle = 0.4f;
 
     // minimum negative and positive speed
-    if (duty_cycle < 0.15f && duty_cycle > 0) 
-        duty_cycle = 0.15f;
-    // if (duty_cycle > -0.15f && duty_cycle < 0) 
-    //     duty_cycle = -0.15f;
 
+        
     write_int(static_cast<int>(duty_cycle * TOP));
 }
 

@@ -31,8 +31,8 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
     _rl_motor.write(0.0f);
     _rr_motor.write(0.0f);
    
-    _l_pid.set_output_limits(-1.0f, 1.0f);
     _r_pid.set_output_limits(-1.0f, 1.0f);
+    _l_pid.set_output_limits(-1.0f, 1.0f);
    
     _l_setpoint = 0;
     _r_setpoint = 0;
@@ -49,61 +49,71 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
     _pid_rate = float(sample_time_ms) / 1000.0f;
 }
 
+Robot::~Robot() {
+    _fl_motor.write(0.0f);
+    _rl_motor.write(0.0f);
+    _fr_motor.write(0.0f);
+    _rr_motor.write(0.0f);
+    printf("Robot shutting down. Motors stopped.\n");
+}
+
 void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
     uint rl_encoder_ticks, uint rr_encoder_ticks)
 {
+    // Compute actual encoder ticks per cycle
     int32_t l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2;
     int32_t r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2;
-
-    _state.l_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * l_ticks / ROBOT_MOTOR_PPR;
-    _state.r_position = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * r_ticks / ROBOT_MOTOR_PPR;
 
     int32_t dl_ticks = l_ticks - _state.l_ticks;
     int32_t dr_ticks = r_ticks - _state.r_ticks;
 
-    // update odometry
     updateOdometry(dl_ticks, dr_ticks);
 
-    _state.l_ref_speed = _l_setpoint;
-    _state.r_ref_speed = _r_setpoint;
+    // Compute target encoder ticks per cycle based on desired speed
+    float target_l_ticks = (_l_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
+    float target_r_ticks = (_r_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
 
-    if (_state.l_ref_speed <= 0.003 && _state.r_ref_speed <= 0.003 &&
-        fl_encoder_ticks > 0 && fr_encoder_ticks > 0 &&
-        rl_encoder_ticks > 0 && rr_encoder_ticks > 0) {
-        _fl_motor.write(0.0f);
-        _rl_motor.write(0.0f);
-        _fr_motor.write(0.0f);
-        _rr_motor.write(0.0f);
-        // std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-    }
-    else {
-        _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
-        _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    
+    _odom.v = (_state.l_speed + _state.r_speed) / 2.0f;
+    _odom.w = (_state.r_speed - _state.l_speed) / ROBOT_WHEEL_SEPARATION;
+    
+    // Set PID input as tick error instead of speed error
+    _l_input = dl_ticks;
+    _r_input = dr_ticks;
+    
+    _l_setpoint = target_l_ticks;
+    _r_setpoint = target_r_ticks;
 
-        // _odom.v = (ROBOT_WHEEL_RADIUS / 2.0f) * (_state.l_speed + _state.r_speed);
-        // _odom.w = (ROBOT_WHEEL_RADIUS / ROBOT_WHEEL_SEPARATION) * (_state.r_speed - _state.l_speed);
-        _odom.v = (_state.l_speed + _state.r_speed) / 2.0f;
-        _odom.w = (_state.r_speed - _state.l_speed) / ROBOT_WHEEL_SEPARATION;
+    // Run PID controller
+    _l_pid.compute();
+    _r_pid.compute();
 
-        _l_input = _state.l_speed;
-        _r_input = _state.r_speed;
-
-        _l_pid.compute();
-        _r_pid.compute();
-
-        _state.l_effort = _l_output;
-        _state.r_effort = _r_output;
-
-        _fl_motor.write(_state.l_effort);
-        _rl_motor.write(_state.l_effort);
-
-        _fr_motor.write(_state.r_effort);
-        _rr_motor.write(_state.r_effort);
-
-        printf("Front Left Encoder ticks: %d, Rear Left Encoder ticks: %d\nFront Right Encoder ticks: %d, Rear Right Encoder ticks: %d\nDl ticks: %d, Dr ticks: %d\nDesired speed: %f\nActual left speed: %f, Actual right speed: %f\nLeft PWM: %f, Right PWM: %f\n------------\n", 
-                fl_encoder_ticks, rl_encoder_ticks, fr_encoder_ticks, rr_encoder_ticks, dl_ticks, dr_ticks, _state.l_ref_speed, _state.l_speed, _state.r_speed, _state.l_effort, _state.r_effort);
+    float l_pwm = _state.l_effort + _l_output;
+    float r_pwm = _state.r_effort + _r_output;
+    
+    // STOP
+    if (_l_setpoint == 0 &&_r_setpoint == 0) {
+        l_pwm = 0.0f;
+        r_pwm = 0.0f;
     }
 
+    // Apply PID outputs as motor efforts
+    _fl_motor.write(l_pwm);
+    _rl_motor.write(l_pwm);
+    _fr_motor.write(r_pwm);
+    _rr_motor.write(r_pwm);
+
+    _state.l_effort = l_pwm;
+    _state.r_effort = r_pwm;
+
+    printf("Target Left Ticks: %.2f, Actual Left Ticks: %d\n"
+           "Target Right Ticks: %.2f, Actual Right Ticks: %d\n"
+           "Left PWM: %f, Right PWM: %f\n------------\n", 
+           target_l_ticks, dl_ticks, target_r_ticks, dr_ticks, l_pwm, r_pwm);
+
+    // Update last recorded ticks
     _state.l_ticks = l_ticks;
     _state.r_ticks = r_ticks;
 }

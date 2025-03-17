@@ -15,7 +15,7 @@
 #include <array>
 
 #define MOTOR_PPR 20.0f
-#define SAMPLE_TIME_MS 500
+#define SAMPLE_TIME_MS 50
 #define PWM_FREQUENCY 800
 
 class RobotNode : public rclcpp::Node {
@@ -23,9 +23,9 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 1.4)),
-        ki1_(declare_parameter("ki", 0.01)),
-        kd1_(declare_parameter("kd", 0.0)),
+        kp1_(declare_parameter("kp", 0.01f)),
+        ki1_(declare_parameter("ki", 0.0f)),
+        kd1_(declare_parameter("kd", 0.003f)),
         robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
                     {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
                     {PWM_FREQUENCY, L_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
@@ -172,55 +172,67 @@ private:
 
     void update() {
         // Update robot state
-        robot_.setUnicycle(linear_, angular_);
-        robot_.updatePid(front_left_encoder_->get_pulses(), front_right_encoder_->get_pulses(),
-                        rear_left_encoder_->get_pulses(), rear_right_encoder_->get_pulses());
+        uint fl_encoder = front_left_encoder_->get_pulses();
+        uint fr_encoder = front_right_encoder_->get_pulses();
+        uint rl_encoder = rear_left_encoder_->get_pulses();
+        uint rr_encoder = rear_right_encoder_->get_pulses();
 
-        // Get the current robot state and odometry
-        // auto state = robot_.getState();
-        auto odometry = robot_.getOdometry();
+        int32_t l_ticks = (fl_encoder + rl_encoder) / 2;
+        int32_t r_ticks = (fr_encoder + rr_encoder ) / 2;
 
-        if (initPose) {
-            odometry.x_pos += startPose[0];
-            odometry.y_pos += startPose[1];
+        int32_t dl_ticks = l_ticks - robot_.getState().l_ticks;
+        int32_t dr_ticks = r_ticks - robot_.getState().r_ticks;
+
+        if (dl_ticks > 0 || dr_ticks > 0) {
+            robot_.setUnicycle(linear_, angular_);
+            robot_.updatePid(fl_encoder, rl_encoder, fr_encoder, rr_encoder);
+    
+            // Get the current robot state and odometry
+            // auto state = robot_.getState();
+            auto odometry = robot_.getOdometry();
+    
+            if (initPose) {
+                odometry.x_pos += startPose[0];
+                odometry.y_pos += startPose[1];
+            }
+    
+            auto robot_orientation = quaternionFromEuler(0.0, 0.0, odometry.theta);
+            
+            // Timestamp for odometry and transforms
+            auto timestamp = this->get_clock()->now();
+    
+            // Create and send transform
+            // geometry_msgs::msg::TransformStamped transform;
+            // transform.header.stamp = timestamp;
+            // transform.header.frame_id = "odom";
+            // transform.child_frame_id = "base_link";
+            // transform.transform.translation.x = odometry.x_pos;
+            // transform.transform.translation.y = odometry.y_pos;
+            // transform.transform.translation.z = 0.0325; // Fixed height of the robot
+            // transform.transform.rotation = robot_orientation;
+    
+            // tf_broadcaster_->sendTransform(transform);
+    
+            // Create and publish odometry message
+            nav_msgs::msg::Odometry odom_msg;
+            odom_msg.header.stamp = timestamp;
+            odom_msg.header.frame_id = "odom";
+            odom_msg.child_frame_id = "base_link";
+    
+            // Pose
+            odom_msg.pose.pose.position.x = odometry.x_pos;
+            odom_msg.pose.pose.position.y = odometry.y_pos;
+            odom_msg.pose.pose.position.z = 0.0325; // Same fixed height
+            odom_msg.pose.pose.orientation = robot_orientation;
+    
+            // Twist
+            odom_msg.twist.twist.linear.x = odometry.v;
+            odom_msg.twist.twist.angular.z = odometry.w;
+    
+            // printState(robot_.getState(), odometry);
+    
+            odom_publisher_->publish(odom_msg);
         }
-
-        auto robot_orientation = quaternionFromEuler(0.0, 0.0, odometry.theta);
-        
-        // Timestamp for odometry and transforms
-        auto timestamp = this->get_clock()->now();
-
-        // Create and send transform
-        // geometry_msgs::msg::TransformStamped transform;
-        // transform.header.stamp = timestamp;
-        // transform.header.frame_id = "odom";
-        // transform.child_frame_id = "base_link";
-        // transform.transform.translation.x = odometry.x_pos;
-        // transform.transform.translation.y = odometry.y_pos;
-        // transform.transform.translation.z = 0.0325; // Fixed height of the robot
-        // transform.transform.rotation = robot_orientation;
-
-        // tf_broadcaster_->sendTransform(transform);
-
-        // Create and publish odometry message
-        nav_msgs::msg::Odometry odom_msg;
-        odom_msg.header.stamp = timestamp;
-        odom_msg.header.frame_id = "odom";
-        odom_msg.child_frame_id = "base_link";
-
-        // Pose
-        odom_msg.pose.pose.position.x = odometry.x_pos;
-        odom_msg.pose.pose.position.y = odometry.y_pos;
-        odom_msg.pose.pose.position.z = 0.0325; // Same fixed height
-        odom_msg.pose.pose.orientation = robot_orientation;
-
-        // Twist
-        odom_msg.twist.twist.linear.x = odometry.v;
-        odom_msg.twist.twist.angular.z = odometry.w;
-
-        // printState(robot_.getState(), odometry);
-
-        odom_publisher_->publish(odom_msg);
     }
 
     // ROS 2 Publishers and Subscribers

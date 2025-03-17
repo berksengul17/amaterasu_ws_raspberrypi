@@ -15,9 +15,9 @@
 #define R_MOTOR_MAX_SPEED 1.0f
 #define ROBOT_MOTOR_PPR 40.0f // 20.0f
 #define ROBOT_WHEEL_RADIUS 0.0325f // m
-#define ROBOT_WHEEL_SEPARATION 0.17f // m
-#define ROBOT_MAX_LINEAR_M_S 0.2
-#define ROBOT_MIN_LINEAR_M_S (-0.2)
+#define ROBOT_WHEEL_SEPARATION 0.13f // m
+#define ROBOT_MAX_LINEAR_M_S 1.0
+#define ROBOT_MIN_LINEAR_M_S (-1.0)
 #define ROBOT_MAX_ANGULAR_R_S 2.0
 #define ROBOT_MIN_ANGULAR_R_S (-2.0)
 
@@ -79,6 +79,8 @@ public:
     void updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
         uint rl_encoder_ticks, uint rr_encoder_ticks);
     void updatePidParams(float kp, float kd, float ki);
+    
+    ~Robot();
 
 private:
     float _kp;
