@@ -73,6 +73,9 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     float target_l_ticks = (_l_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
     float target_r_ticks = (_r_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
 
+    bool left_reverse = (target_l_ticks < 0);
+    bool right_reverse = (target_r_ticks < 0);
+
     _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
     _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
     
@@ -83,8 +86,8 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     _l_input = dl_ticks;
     _r_input = dr_ticks;
     
-    _l_setpoint = target_l_ticks;
-    _r_setpoint = target_r_ticks;
+    _l_setpoint = fabs(target_l_ticks);
+    _r_setpoint = fabs(target_r_ticks);
 
     // Run PID controller
     _l_pid.compute();
@@ -100,10 +103,11 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     }
 
     // Apply PID outputs as motor efforts
-    _fl_motor.write(l_pwm);
-    _rl_motor.write(l_pwm);
-    _fr_motor.write(r_pwm);
-    _rr_motor.write(r_pwm);
+    // Adjust motor effort based on direction
+    _fl_motor.write(left_reverse ? -l_pwm : l_pwm);
+    _rl_motor.write(left_reverse ? -l_pwm : l_pwm);
+    _fr_motor.write(right_reverse ? -r_pwm : r_pwm);
+    _rr_motor.write(right_reverse ? -r_pwm : r_pwm);
 
     _state.l_effort = l_pwm;
     _state.r_effort = r_pwm;
@@ -111,7 +115,7 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     printf("Target Left Ticks: %.2f, Actual Left Ticks: %d\n"
            "Target Right Ticks: %.2f, Actual Right Ticks: %d\n"
            "Left PWM: %f, Right PWM: %f\n------------\n", 
-           target_l_ticks, dl_ticks, target_r_ticks, dr_ticks, l_pwm, r_pwm);
+           _l_setpoint, dl_ticks, _r_setpoint, dr_ticks, l_pwm, r_pwm);
 
     // Update last recorded ticks
     _state.l_ticks = l_ticks;

@@ -62,7 +62,7 @@ class ExtendedKalmanFilter(Node):
         self.odom_pub = self.create_publisher(Odometry, "/ekf_odom", 10)
         self.odomBroadcaster = TransformBroadcaster(self)
         
-        self.dt = 0.5 # 10ms
+        self.dt = 0.05 # 10ms
         self.last_time = time.time()
         self.timer = self.create_timer(self.dt, self.run)
 
