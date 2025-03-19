@@ -92,10 +92,23 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     // Run PID controller
     _l_pid.compute();
     _r_pid.compute();
-
-    float l_pwm = _state.l_effort + _l_output;
-    float r_pwm = _state.r_effort + _r_output;
     
+    float l_pwm;
+    float r_pwm;
+
+    if (left_reverse) {
+        l_pwm = std::min(_state.l_effort - _l_output, 0.0f);
+    } else {
+        l_pwm = std::max(_state.l_effort + _l_output, 0.0f);
+    }
+
+    if (right_reverse) {
+        r_pwm = std::min(_state.r_effort - _r_output, 0.0f);
+    } else {
+        r_pwm = std::max(_state.r_effort + _r_output, 0.0f);
+
+    }
+
     // STOP
     if (_l_setpoint == 0 &&_r_setpoint == 0) {
         l_pwm = 0.0f;
@@ -104,10 +117,10 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
 
     // Apply PID outputs as motor efforts
     // Adjust motor effort based on direction
-    _fl_motor.write(left_reverse ? -l_pwm : l_pwm);
-    _rl_motor.write(left_reverse ? -l_pwm : l_pwm);
-    _fr_motor.write(right_reverse ? -r_pwm : r_pwm);
-    _rr_motor.write(right_reverse ? -r_pwm : r_pwm);
+    _fl_motor.write(l_pwm);
+    _rl_motor.write(l_pwm);
+    _fr_motor.write(r_pwm);
+    _rr_motor.write(r_pwm);
 
     _state.l_effort = l_pwm;
     _state.r_effort = r_pwm;

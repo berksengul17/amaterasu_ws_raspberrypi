@@ -55,6 +55,8 @@ void DCMotor::write(float duty_cycle)
 {
     if (duty_cycle > 1.0f)
         duty_cycle = 1.0f;
+    if (duty_cycle < -1.0f)
+        duty_cycle = -1.0f;
     // if (duty_cycle > 0 && duty_cycle < 0.4f)
     //     duty_cycle = 0.4f;
 

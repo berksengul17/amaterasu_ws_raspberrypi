@@ -46,7 +46,7 @@ class MoveSquare(Node):
         _, _, self.yaw = euler_from_quaternion(quaternion)
         
         # convert to degrees
-        self.yaw = self.yaw * (180.0 / np.pi) 
+        self.yaw = self.yaw * (180.0 / np.pi)
     
     def forward(self, speed):
         twist = Twist()
@@ -55,10 +55,16 @@ class MoveSquare(Node):
 
         self.cmd_vel_pub.publish(twist)
 
-    def turn_left(self):
+    def turn_left(self, yaw_error):
         twist = Twist()
         twist.linear.x = 0.0
-        twist.angular.z = 1.0
+
+        if yaw_error > 20:
+            twist.angular.z = 2.0  # Fast turn
+        elif yaw_error > 10:
+            twist.angular.z = 1.0  # Medium turn
+        else:
+            twist.angular.z = 0.3  # Slow final adjustment
 
         self.cmd_vel_pub.publish(twist)
 
@@ -98,18 +104,20 @@ class MoveSquare(Node):
         #         self.get_logger().info(f"Stopped. Travelled distance: {dist}")
         
         if self.state == "turning":
-            yaw_diff = 90.0 - self.yaw
+            yaw_diff = -90.0 - self.yaw
             self.get_logger().info(f"Yaw Error: {yaw_diff}")
             
 
-            if abs(yaw_diff) <= 3:
+            if abs(yaw_diff) <= 3 and self.state != "stopped":
                 # self.state = "forward"
                 # self.start_x = self.x
                 # self.start_y = self.y
                 self.stop()
+                self.state = "stopped"
                 self.get_logger().info("Turn completed. Going forward...")
+            # odom solu artı oluyo olabilir tekerlekler işin içine girince yaw error -120 lere falan gitti olduğu yerde
             else:
-                self.turn_left()
+                self.turn_left(yaw_diff)
 
 def main(args=None):
     rclpy.init(args=args)
