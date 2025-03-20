@@ -34,7 +34,7 @@ class MoveSquare(Node):
         self.odom_sub = self.create_subscription(Odometry, "/ekf_odom", self.odom_callback, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
-        self.timer = self.create_timer(0.05, self.move_square)
+        self.timer = self.create_timer(0.01, self.move_square)
 
     # update posiiton
     def odom_callback(self, msg: Odometry):
@@ -59,14 +59,17 @@ class MoveSquare(Node):
         twist = Twist()
         twist.linear.x = 0.0
 
-        if yaw_error > 20:
-            twist.angular.z = 2.0  # Fast turn
+        if yaw_error > 30:
+            twist.angular.z = 1.5  # Reduce max speed to prevent overshoot
+        elif yaw_error > 15:
+            twist.angular.z = 0.8  # Reduce medium turn speed
         elif yaw_error > 10:
-            twist.angular.z = 1.0  # Medium turn
+            twist.angular.z = 0.4  # Slow final adjustment
         else:
-            twist.angular.z = 0.3  # Slow final adjustment
+            twist.angular.z = 0.1  # Very slow fine-tuning
 
         self.cmd_vel_pub.publish(twist)
+
 
     def stop(self):
         twist = Twist()
@@ -104,18 +107,17 @@ class MoveSquare(Node):
         #         self.get_logger().info(f"Stopped. Travelled distance: {dist}")
         
         if self.state == "turning":
-            yaw_diff = -90.0 - self.yaw
+            yaw_diff = 90.0 - self.yaw
             self.get_logger().info(f"Yaw Error: {yaw_diff}")
             
 
-            if abs(yaw_diff) <= 3 and self.state != "stopped":
+            if abs(yaw_diff) <= 1.5 and self.state != "stopped":
                 # self.state = "forward"
                 # self.start_x = self.x
                 # self.start_y = self.y
                 self.stop()
                 self.state = "stopped"
                 self.get_logger().info("Turn completed. Going forward...")
-            # odom solu artı oluyo olabilir tekerlekler işin içine girince yaw error -120 lere falan gitti olduğu yerde
             else:
                 self.turn_left(yaw_diff)
 

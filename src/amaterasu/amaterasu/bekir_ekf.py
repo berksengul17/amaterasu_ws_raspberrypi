@@ -31,7 +31,7 @@ class ExtendedKalmanFilter(Node):
 
         # sensor noise
         self.sigma_z_sq = np.array([[0.1, 0, 0], #noise in v_odom
-                                    [0, 0.3, 0], #noise in w_odom
+                                    [0, 1.0, 0], #noise in w_odom
                                     [0, 0, 0.02]]) #noise in w_gyro
         
 
@@ -62,17 +62,17 @@ class ExtendedKalmanFilter(Node):
         self.odom_pub = self.create_publisher(Odometry, "/ekf_odom", 10)
         self.odomBroadcaster = TransformBroadcaster(self)
         
-        self.dt = 0.05 # 10ms
+        self.dt = 0.01 # 10ms
         self.last_time = time.time()
         self.timer = self.create_timer(self.dt, self.run)
 
-    def imu_callback(self,msg):
-        self.w_imu = msg.angular_velocity.z
+    def imu_callback(self, msg):
+        alpha = 0.8  # Smoothing factor (adjust if needed)
+        self.w_imu = alpha * self.w_imu + (1 - alpha) * msg.angular_velocity.z
 
     def odom_callback(self,msg):
         self.w_odom = msg.twist.twist.angular.z
         self.v_odom = msg.twist.twist.linear.x
-        print(f"Odom v: {self.v_odom} | Odom w: {self.w_odom}")
 
     def run(self):
         curr_time = time.time()
@@ -121,6 +121,7 @@ class ExtendedKalmanFilter(Node):
         odom.pose.pose.position.y = float(self.mu[1])
         odom.pose.pose.position.z = 0.0
 
+        print(f"w_imu: {self.w_imu} | w_odom: {self.w_odom} | Combined yaw: {self.mu[2]:.2f}")
 
         qt_array = quaternion_from_euler(0,0,self.mu[2])
         quaternion = Quaternion(x=qt_array[0], y=qt_array[1], z=qt_array[2], w=qt_array[3])

@@ -33,11 +33,11 @@ class ImuPublisher(Node):
         imu_msg.header.frame_id = "imu_link"
 
         # Gyroscope data (only Z-axis is used)
-        imu_msg.angular_velocity.z = gyro_z
+        imu_msg.angular_velocity.z = -gyro_z
 
         # Publish message
         self.imu_publisher.publish(imu_msg)
-        self.get_logger().info(f'Published Gyro Z: {gyro_z:.6f} rad/s')
+        self.get_logger().info(f'Published Gyro Z: {-gyro_z:.6f} rad/s')
 
 def main(args=None):
     rclpy.init(args=args)

@@ -15,7 +15,7 @@
 #include <array>
 
 #define MOTOR_PPR 20.0f
-#define SAMPLE_TIME_MS 50
+#define SAMPLE_TIME_MS 10
 #define PWM_FREQUENCY 800
 
 class RobotNode : public rclcpp::Node {
