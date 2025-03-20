@@ -13,12 +13,15 @@ public:
     void stop();
     int32_t get_pulses() const;
     void set_pulses(int new_pulses);
+    float get_speed();
 
 private:
     int _pin;
     std::atomic<int32_t> _pulses;
     std::atomic<bool> _running;
     std::thread _thread;
+    std::atomic<float> _speed;
+    std::chrono::steady_clock::time_point _last_pulse_time;
 
     void countTicks();
 };

@@ -172,10 +172,10 @@ private:
 
     void update() {
         // Update robot state
-        uint fl_encoder = front_left_encoder_->get_pulses();
-        uint fr_encoder = front_right_encoder_->get_pulses();
-        uint rl_encoder = rear_left_encoder_->get_pulses();
-        uint rr_encoder = rear_right_encoder_->get_pulses();
+        float fl_speed = front_left_encoder_->get_speed();
+        float fr_speed = front_right_encoder_->get_speed();
+        float rl_speed = rear_left_encoder_->get_speed();
+        float rr_speed = rear_right_encoder_->get_speed();
 
         // int32_t l_ticks = (fl_encoder + rl_encoder) / 2;
         // int32_t r_ticks = (fr_encoder + rr_encoder ) / 2;
@@ -185,7 +185,7 @@ private:
 
         // if (dl_ticks > 0 || dr_ticks > 0) {
         robot_.setUnicycle(linear_, angular_);
-        robot_.updatePid(fl_encoder, rl_encoder, fr_encoder, rr_encoder);
+        robot_.updatePid(fl_speed, fr_speed, rl_speed, rr_speed);
 
         // Get the current robot state and odometry
         // auto state = robot_.getState();

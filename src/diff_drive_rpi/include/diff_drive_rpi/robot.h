@@ -76,8 +76,7 @@ public:
     RobotState getState();
     RobotOdometry getOdometry();
     void setPidTunings(float kp, float kd, float ki);
-    void updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
-        uint rl_encoder_ticks, uint rr_encoder_ticks);
+    void updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_speed);
     void updatePidParams(float kp, float kd, float ki);
     
     ~Robot();
@@ -113,7 +112,7 @@ private:
     RobotOdometry _odom;
 
     void controlLoop();
-    void updateOdometry(int32_t dl_ticks, int32_t dr_ticks);
+    void updateOdometry(float l_speed, float r_speed);
 };
 
 #endif //DIFF_DRIVE_ROBOT_H

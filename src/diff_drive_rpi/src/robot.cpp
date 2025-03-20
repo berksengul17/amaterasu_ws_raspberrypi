@@ -57,37 +57,41 @@ Robot::~Robot() {
     printf("Robot shutting down. Motors stopped.\n");
 }
 
-void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks, 
-    uint rl_encoder_ticks, uint rr_encoder_ticks)
+void Robot::updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_speed)
 {
     // Compute actual encoder ticks per cycle
-    int32_t l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2;
-    int32_t r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2;
+    // int32_t l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2;
+    // int32_t r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2;
 
-    int32_t dl_ticks = l_ticks - _state.l_ticks;
-    int32_t dr_ticks = r_ticks - _state.r_ticks;
+    // int32_t dl_ticks = l_ticks - _state.l_ticks;
+    // int32_t dr_ticks = r_ticks - _state.r_ticks;
 
-    updateOdometry(dl_ticks, dr_ticks);
+    bool left_reverse = (_l_setpoint < 0);
+    bool right_reverse = (_r_setpoint < 0);
+
+    float l_speed = (fl_speed + rl_speed) / 2.0f;
+    float r_speed = (fr_speed + rr_speed) / 2.0f;
+
+    printf("Raw Left Speed: %.3f | Raw Right Speed: %.3f\n", l_speed, r_speed);
+
+    l_speed = left_reverse ? -l_speed : l_speed;
+    r_speed = right_reverse ? -r_speed : r_speed;
+
+    updateOdometry(l_speed, r_speed);
 
     // Compute target encoder ticks per cycle based on desired speed
-    float target_l_ticks = (_l_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
-    float target_r_ticks = (_r_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
+    // float target_l_ticks = (_l_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
+    // float target_r_ticks = (_r_setpoint * _pid_rate / (2.0 * M_PI * ROBOT_WHEEL_RADIUS)) * ROBOT_MOTOR_PPR;
 
-    bool left_reverse = (target_l_ticks < 0);
-    bool right_reverse = (target_r_ticks < 0);
-
-    _state.l_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dl_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
-    _state.r_speed = (2.0 * M_PI * ROBOT_WHEEL_RADIUS) * dr_ticks / (ROBOT_MOTOR_PPR * _pid_rate);
+    _state.l_speed = l_speed;
+    _state.r_speed = r_speed;
     
     _odom.v = (_state.l_speed + _state.r_speed) / 2.0f;
     _odom.w = (_state.r_speed - _state.l_speed) / ROBOT_WHEEL_SEPARATION;
     
     // Set PID input as tick error instead of speed error
-    _l_input = dl_ticks;
-    _r_input = dr_ticks;
-    
-    _l_setpoint = fabs(target_l_ticks);
-    _r_setpoint = fabs(target_r_ticks);
+    _l_input = l_speed;
+    _r_input = r_speed;
 
     // Run PID controller
     _l_pid.compute();
@@ -97,13 +101,13 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     float r_pwm;
 
     if (left_reverse) {
-        l_pwm = std::min(_state.l_effort - _l_output, 0.0f);
+        l_pwm = std::min(_state.l_effort + _l_output, 0.0f);
     } else {
         l_pwm = std::max(_state.l_effort + _l_output, 0.0f);
     }
 
     if (right_reverse) {
-        r_pwm = std::min(_state.r_effort - _r_output, 0.0f);
+        r_pwm = std::min(_state.r_effort + _r_output, 0.0f);
     } else {
         r_pwm = std::max(_state.r_effort + _r_output, 0.0f);
 
@@ -125,19 +129,15 @@ void Robot::updatePid(uint fl_encoder_ticks, uint fr_encoder_ticks,
     _state.l_effort = l_pwm;
     _state.r_effort = r_pwm;
 
-    printf("Target Left Ticks: %.2f, Actual Left Ticks: %d\n"
-           "Target Right Ticks: %.2f, Actual Right Ticks: %d\n"
+    printf("Target Left Speed: %.2f, Actual Left Speed: %.2f\n"
+           "Target Right Speed: %.2f, Actual Right Speed: %.2f\n"
            "Left PWM: %f, Right PWM: %f\n------------\n", 
-           _l_setpoint, dl_ticks, _r_setpoint, dr_ticks, l_pwm, r_pwm);
-
-    // Update last recorded ticks
-    _state.l_ticks = l_ticks;
-    _state.r_ticks = r_ticks;
+           _l_setpoint, l_speed, _r_setpoint, r_speed, l_pwm, r_pwm);
 }
 
-void Robot::updateOdometry(int32_t dl_ticks, int32_t dr_ticks) {
-    float delta_l = (2 * M_PI * ROBOT_WHEEL_RADIUS * dl_ticks) / ROBOT_MOTOR_PPR;
-    float delta_r = (2 * M_PI * ROBOT_WHEEL_RADIUS * dr_ticks) / ROBOT_MOTOR_PPR;
+void Robot::updateOdometry(float l_speed, float r_speed) {
+    float delta_l = l_speed * _pid_rate;
+    float delta_r = r_speed * _pid_rate;
     float delta_center = (delta_l + delta_r) / 2;
 
     _odom.x_pos += delta_center * cosf(_odom.theta);

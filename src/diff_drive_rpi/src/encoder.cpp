@@ -4,16 +4,18 @@
 #include <chrono>
 #include <wiringPi.h>
 #include <unistd.h>  // For usleep()
+#include <robot.h>
 
 #define DEBOUNCE_TIME_MS 1000  // Ignore signals faster than 1ms
 
-Encoder::Encoder(int pin) : _pin(pin), _pulses(0), _running(false) {
+Encoder::Encoder(int pin) : _pin(pin), _pulses(0), _running(false), _speed(0) {
     if (wiringPiSetupGpio() == -1) {
         throw std::runtime_error("Failed to initialize WiringPi.");
     }
 
     pinMode(_pin, INPUT);
     pullUpDnControl(_pin, PUD_UP);  // Enable pull-up resistor
+    _last_pulse_time = std::chrono::steady_clock::now();
 }
 
 // **Thread Function for Counting Encoder Pulses**
@@ -21,10 +23,22 @@ void Encoder::countTicks() {
     bool last_state = digitalRead(_pin);
 
     while (_running) {
+        auto now = std::chrono::steady_clock::now();
+        std::chrono::duration<float> time_diff = now - _last_pulse_time;
+    
         bool current_state = digitalRead(_pin);
 
-        if (current_state != last_state) {  // Detect edge change
+        if (current_state != last_state) {  // Detect rising or falling edge
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<float> time_diff = now - _last_pulse_time;
+
+            if (time_diff.count() > 0) { // Avoid division by zero
+                _speed = (2 * M_PI * ROBOT_WHEEL_RADIUS) / (ROBOT_MOTOR_PPR * time_diff.count());
+                printf("New speed is calculated: %.2f | dt: %.2f\n", _speed.load(), time_diff.count());
+            }
+
             _pulses++;
+            _last_pulse_time = now; // Update last pulse time
         }
 
         last_state = current_state;
@@ -49,6 +63,10 @@ void Encoder::stop() {
 // **Get current pulse count**
 int32_t Encoder::get_pulses() const {
     return _pulses.load();
+}
+
+float Encoder::get_speed() {
+    return _speed.load();
 }
 
 // **Manually set pulses (for reset)**
