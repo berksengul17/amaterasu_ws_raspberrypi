@@ -14,9 +14,10 @@
 #include <stdexcept>
 #include <array>
 
-#define MOTOR_PPR 20.0f
+#define MOTOR_PPR 39.0f
 #define SAMPLE_TIME_MS 10
 #define PWM_FREQUENCY 800
+#define TICK_ACCUM_WINDOW 5
 
 class RobotNode : public rclcpp::Node {
 public:
@@ -30,7 +31,9 @@ public:
                     {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
                     {PWM_FREQUENCY, L_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
                     {PWM_FREQUENCY, R_EN_PIN, RR_IN1_PIN, RR_IN2_PIN}},
-        robot_(wiringpi_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_)
+        robot_(wiringpi_handle_, kp1_, kd1_, ki1_, SAMPLE_TIME_MS, robot_pins_),
+        sample_counter_(0), tick_sum_left_(0), tick_sum_right_(0),
+        prev_ticks_left_(0), prev_ticks_right_(0)
     {
 
         // Publisher for odometry
@@ -171,21 +174,13 @@ private:
     }
 
     void update() {
-        // Update robot state
-        float fl_speed = front_left_encoder_->get_speed();
-        float fr_speed = front_right_encoder_->get_speed();
-        float rl_speed = rear_left_encoder_->get_speed();
-        float rr_speed = rear_right_encoder_->get_speed();
+        int32_t fl_encoder_ticks = front_left_encoder_->get_pulses();
+        int32_t fr_encoder_ticks = front_right_encoder_->get_pulses();
+        int32_t rl_encoder_ticks = rear_left_encoder_->get_pulses();
+        int32_t rr_encoder_ticks = rear_right_encoder_->get_pulses();
 
-        // int32_t l_ticks = (fl_encoder + rl_encoder) / 2;
-        // int32_t r_ticks = (fr_encoder + rr_encoder ) / 2;
-
-        // int32_t dl_ticks = l_ticks - robot_.getState().l_ticks;
-        // int32_t dr_ticks = r_ticks - robot_.getState().r_ticks;
-
-        // if (dl_ticks > 0 || dr_ticks > 0) {
         robot_.setUnicycle(linear_, angular_);
-        robot_.updatePid(fl_speed, fr_speed, rl_speed, rr_speed);
+        robot_.updatePid(fl_encoder_ticks, fr_encoder_ticks, rl_encoder_ticks, rr_encoder_ticks);
 
         // Get the current robot state and odometry
         // auto state = robot_.getState();
@@ -264,6 +259,12 @@ private:
     std::unique_ptr<Encoder> rear_left_encoder_;
     std::unique_ptr<Encoder> rear_right_encoder_;
     Robot robot_;
+
+    int sample_counter_;
+    int32_t tick_sum_left_;
+    int32_t tick_sum_right_;
+    int32_t prev_ticks_left_;
+    int32_t prev_ticks_right_;
 };
 
 int main(int argc, char *argv[]) {

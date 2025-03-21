@@ -160,7 +160,7 @@ class ExtendedKalmanFilter(Node):
         tf.transform.translation.z = 0.0
          
         tf.transform.rotation.x = quaternion.x
-        tf.transform.rotation.y = quaternion.x
+        tf.transform.rotation.y = quaternion.y
         tf.transform.rotation.z = quaternion.z
         tf.transform.rotation.w = quaternion.w
 

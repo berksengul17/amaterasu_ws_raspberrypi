@@ -19,7 +19,7 @@ class MoveSquare(Node):
         super().__init__("move_square")
         
         # stopped, forward, turning
-        self.state = "turning"
+        self.state = "forward"
 
         self.x = 0.0
         self.y = 0.0
@@ -85,38 +85,35 @@ class MoveSquare(Node):
             self.get_logger().info("Square is completed...")
             return
         
-        # if self.state == "forward":
-        #     if self.turn_count == 0:
-        #         if self.start_x == None and self.start_y == None:
-        #             self.start_x = self.x
-        #             self.start_y = self.y
+        if self.state == "forward":
+            if self.turn_count == 0:
+                if self.start_x == None and self.start_y == None:
+                    self.start_x = self.x
+                    self.start_y = self.y
 
-        #         self.get_logger().info(f"Started the square motion. Start X: {self.start_x} | Start Y: {self.start_y}")
+                self.get_logger().info(f"Started the square motion. Start X: {self.start_x} | Start Y: {self.start_y}")
 
-        #     dist = abs(self.x - self.start_x)
-        #     self.get_logger().info(f"Travelled distance: {dist}")
+            dist = abs(self.x - self.start_x)
+            self.get_logger().info(f"Travelled distance: {dist}")
             
-        #     self.forward((1 - dist) * 0.4)
+            self.forward((1 - dist) * 0.8)
 
-        #     # one side is completed
-        #     if dist >= 0.9:
-        #         self.stop()
-        #         self.state = "turning"
-        #         self.turn_count += 1
-        #         # self.turn_left()
-        #         self.get_logger().info(f"Stopped. Travelled distance: {dist}")
+            # one side is completed
+            if dist >= 1.0:
+                self.stop()
+                self.state = "turning"
+                self.turn_count += 1
+                # self.turn_left()
+                self.get_logger().info(f"Stopped. Travelled distance: {dist}")
         
         if self.state == "turning":
-            yaw_diff = 90.0 - self.yaw
+            yaw_diff = self.turn_count * 90.0 - self.yaw
             self.get_logger().info(f"Yaw Error: {yaw_diff}")
             
-
             if abs(yaw_diff) <= 1.5 and self.state != "stopped":
-                # self.state = "forward"
-                # self.start_x = self.x
-                # self.start_y = self.y
-                self.stop()
-                self.state = "stopped"
+                self.state = "forward"
+                self.start_x = self.x
+                self.start_y = self.y
                 self.get_logger().info("Turn completed. Going forward...")
             else:
                 self.turn_left(yaw_diff)

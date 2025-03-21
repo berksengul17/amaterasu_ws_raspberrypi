@@ -57,22 +57,21 @@ Robot::~Robot() {
     printf("Robot shutting down. Motors stopped.\n");
 }
 
-void Robot::updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_speed)
+void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks, 
+                        int32_t rl_encoder_ticks, int32_t rr_encoder_ticks)
 {
     // Compute actual encoder ticks per cycle
-    // int32_t l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2;
-    // int32_t r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2;
+    float l_ticks = (fl_encoder_ticks + rl_encoder_ticks) / 2.0f;
+    float r_ticks = (fr_encoder_ticks + rr_encoder_ticks) / 2.0f;
 
-    // int32_t dl_ticks = l_ticks - _state.l_ticks;
-    // int32_t dr_ticks = r_ticks - _state.r_ticks;
+    float dl_ticks = l_ticks - _state.l_ticks;
+    float dr_ticks = r_ticks - _state.r_ticks;
 
     bool left_reverse = (_l_setpoint < 0);
     bool right_reverse = (_r_setpoint < 0);
 
-    float l_speed = (fl_speed + rl_speed) / 2.0f;
-    float r_speed = (fr_speed + rr_speed) / 2.0f;
-
-    printf("Raw Left Speed: %.3f | Raw Right Speed: %.3f\n", l_speed, r_speed);
+    float l_speed = (2 * M_PI * ROBOT_WHEEL_RADIUS * dl_ticks) / (_pid_rate * ROBOT_MOTOR_PPR);
+    float r_speed = (2 * M_PI * ROBOT_WHEEL_RADIUS * dr_ticks) / (_pid_rate * ROBOT_MOTOR_PPR);
 
     l_speed = left_reverse ? -l_speed : l_speed;
     r_speed = right_reverse ? -r_speed : r_speed;
@@ -120,7 +119,7 @@ void Robot::updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_s
     }
 
     // Apply PID outputs as motor efforts
-    // Adjust motor effort based on direction
+    // Adjust motor effort based on directions  
     _fl_motor.write(l_pwm);
     _rl_motor.write(l_pwm);
     _fr_motor.write(r_pwm);
@@ -129,9 +128,16 @@ void Robot::updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_s
     _state.l_effort = l_pwm;
     _state.r_effort = r_pwm;
 
-    printf("Target Left Speed: %.2f, Actual Left Speed: %.2f\n"
+    _state.l_ticks = l_ticks;
+    _state.r_ticks = r_ticks;
+
+    printf("Left encoder ticks: %.2f, Right encoder ticks: %.2f\n"
+           "State L Encoder: %.2f, State R Encoder: %.2f\n"
+           "Dl: %.2f, Dr: %.2f\n"
+           "Target Left Speed: %.2f, Actual Left Speed: %.2f\n"
            "Target Right Speed: %.2f, Actual Right Speed: %.2f\n"
            "Left PWM: %f, Right PWM: %f\n------------\n", 
+           l_ticks, r_ticks, _state.l_ticks, _state.r_ticks, dl_ticks, dr_ticks, 
            _l_setpoint, l_speed, _r_setpoint, r_speed, l_pwm, r_pwm);
 }
 

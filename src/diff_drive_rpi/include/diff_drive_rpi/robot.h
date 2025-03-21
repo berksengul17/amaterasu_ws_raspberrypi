@@ -39,8 +39,8 @@ struct RobotPins
 
 struct RobotState
 {
-    int32_t l_ticks;
-    int32_t r_ticks;
+    float l_ticks;
+    float r_ticks;
     float l_position;
     float r_position;
     float l_speed;
@@ -75,8 +75,8 @@ public:
     void setUnicycle(float v, float w);
     RobotState getState();
     RobotOdometry getOdometry();
-    void setPidTunings(float kp, float kd, float ki);
-    void updatePid(float fl_speed, float fr_speed, float rl_speed, float rr_speed);
+    void updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks, 
+        int32_t rl_encoder_ticks, int32_t rr_encoder_ticks);
     void updatePidParams(float kp, float kd, float ki);
     
     ~Robot();
