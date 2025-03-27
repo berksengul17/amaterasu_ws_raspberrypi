@@ -13,7 +13,7 @@
 #define L_MOTOR_MAX_SPEED 1.0f
 #define R_MOTOR_MIN_SPEED -1.0f
 #define R_MOTOR_MAX_SPEED 1.0f
-#define ROBOT_MOTOR_PPR 40.0f // 20.0f
+#define ROBOT_MOTOR_PPR 39.0f // 20.0f
 #define ROBOT_WHEEL_RADIUS 0.0325f // m
 #define ROBOT_WHEEL_SEPARATION 0.13f // m
 #define ROBOT_MAX_LINEAR_M_S 1.0
