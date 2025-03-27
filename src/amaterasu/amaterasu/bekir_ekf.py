@@ -33,7 +33,6 @@ class ExtendedKalmanFilter(Node):
         self.sigma_z_sq = np.array([[0.1, 0, 0], #noise in v_odom
                                     [0, 1.0, 0], #noise in w_odom
                                     [0, 0, 0.02]]) #noise in w_gyro
-        
 
         ## DEĞİŞTİR
         self.H = np.array([[0, 0, 0, 1, 0],
@@ -69,7 +68,7 @@ class ExtendedKalmanFilter(Node):
     def imu_callback(self, msg):
         alpha = 0.8  # Smoothing factor (adjust if needed)
         self.w_imu = alpha * self.w_imu + (1 - alpha) * msg.angular_velocity.z
-
+        
     def odom_callback(self,msg):
         self.w_odom = msg.twist.twist.angular.z
         self.v_odom = msg.twist.twist.linear.x
