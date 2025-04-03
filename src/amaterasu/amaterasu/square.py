@@ -164,9 +164,39 @@ class MoveSquare(Node):
 
         elif self.state == 'MOVING':
             if self.r_desired > self.r_tolerance:
-                self.forward(self.r_desired * 0.4)
+                # Update yaw error and use it for correction
+                yaw_error = self.calculate_theta_desired()
+                
+                # Optional: Reset integral and derivative if needed
+                self.yaw_error_sum += yaw_error * self.sample_time
+                yaw_error_derivative = (yaw_error - self.prev_yaw_error) / self.sample_time
+
+                # PID controller for angular correction during motion
+                angular_z = (
+                    self.kp_turn * yaw_error +
+                    self.ki_turn * self.yaw_error_sum +
+                    self.kd_turn * yaw_error_derivative
+                )
+
+                # Clamp angular velocity
+                max_angular_speed = 1.5
+                angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
+
+                # Forward velocity is proportional to distance
+                linear_x = self.r_desired * 0.4
+
+                twist = Twist()
+                twist.linear.x = linear_x
+                twist.angular.z = -angular_z  # Negative due to right-hand rule
+
+                self.cmd_vel_pub.publish(twist)
+                self.prev_yaw_error = yaw_error
+
             else:
                 self.state = 'GOAL_REACHED'
+                self.yaw_error_sum = 0.0
+                self.prev_yaw_error = 0.0
+
 
         if self.state == 'GOAL_REACHED':
             return True
@@ -187,6 +217,7 @@ class MoveSquare(Node):
 
     def cancel_callback(self, goal_handle):
         self.get_logger().info('Received cancel request')
+        self.stop()
         return CancelResponse.ACCEPT
     
     async def execute_callback(self, goal_handle):
