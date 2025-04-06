@@ -100,15 +100,15 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     float r_pwm;
 
     if (left_reverse) {
-        l_pwm = std::min(_state.l_effort + _l_output, 0.0f);
+        l_pwm = std::min(_state.l_effort + _l_output, -0.4f);
     } else {
-        l_pwm = std::max(_state.l_effort + _l_output, 0.0f);
+        l_pwm = std::max(_state.l_effort + _l_output, 0.4f);
     }
 
     if (right_reverse) {
-        r_pwm = std::min(_state.r_effort + _r_output, 0.0f);
+        r_pwm = std::min(_state.r_effort + _r_output, -0.4f);
     } else {
-        r_pwm = std::max(_state.r_effort + _r_output, 0.0f);
+        r_pwm = std::max(_state.r_effort + _r_output, 0.4f);
 
     }
 
@@ -132,12 +132,11 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     _state.r_ticks = r_ticks;
 
     printf("Left encoder ticks: %.2f, Right encoder ticks: %.2f\n"
-           "State L Encoder: %.2f, State R Encoder: %.2f\n"
            "Dl: %.2f, Dr: %.2f\n"
            "Target Left Speed: %.2f, Actual Left Speed: %.2f\n"
            "Target Right Speed: %.2f, Actual Right Speed: %.2f\n"
            "Left PWM: %f, Right PWM: %f\n------------\n", 
-           l_ticks, r_ticks, _state.l_ticks, _state.r_ticks, dl_ticks, dr_ticks, 
+           l_ticks, r_ticks, dl_ticks, dr_ticks, 
            _l_setpoint, l_speed, _r_setpoint, r_speed, l_pwm, r_pwm);
 }
 

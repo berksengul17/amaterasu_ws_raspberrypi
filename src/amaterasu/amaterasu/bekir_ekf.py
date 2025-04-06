@@ -5,7 +5,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Quaternion, TransformStamped
-from tf_transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler, euler_from_quaternion
 from tf2_ros import TransformBroadcaster
 from builtin_interfaces.msg import Time
 
@@ -21,23 +21,23 @@ class ExtendedKalmanFilter(Node):
         # initial sensor values
         self.v_odom = 0.0
         self.w_odom = 0.0
-        self.w_imu = 0.0
+        self.yaw_imu = 0.0
 
         # state vector -> x, y, yaw, v, w
         self.mu = np.array([self.x, self.y, self.theta, 0.0, 0.0])
 
         # sensor observations
-        self.z_k = np.array([self.v_odom, self.w_odom, self.w_imu]) 
+        self.z_k = np.array([self.v_odom, self.w_odom, self.yaw_imu]) 
 
         # sensor noise
         self.sigma_z_sq = np.array([[0.1, 0, 0], #noise in v_odom
-                                    [0, 1.0, 0], #noise in w_odom
-                                    [0, 0, 0.02]]) #noise in w_gyro
+                                    [0, 0.1, 0], #noise in w_odom
+                                    [0, 0, 0.02]]) #noise in yaw_imu
 
         ## DEĞİŞTİR
         self.H = np.array([[0, 0, 0, 1, 0],
                            [0, 0, 0, 0, 1],
-                           [0, 0, 0, 0, 1]])
+                           [0, 0, 1, 0, 0]])
         
         # Pk
         self.sigma_sq = np.array([[0.1, 0, 0, 0, 0],
@@ -65,9 +65,13 @@ class ExtendedKalmanFilter(Node):
         self.last_time = time.time()
         self.timer = self.create_timer(self.dt, self.run)
 
+    def normalize_angle(self, angle):
+        return (angle + 180.0) % 360.0 - 180.0
+
     def imu_callback(self, msg):
-        alpha = 0.8  # Smoothing factor (adjust if needed)
-        self.w_imu = alpha * self.w_imu + (1 - alpha) * msg.angular_velocity.z
+        q = msg.orientation
+        _, _, yaw = euler_from_quaternion([q.x, q.y, q.z, q.w])
+        self.yaw_imu = self.normalize_angle(yaw)
         
     def odom_callback(self,msg):
         self.w_odom = msg.twist.twist.angular.z
@@ -79,7 +83,7 @@ class ExtendedKalmanFilter(Node):
         self.last_time = time.time()
         x_k, y_k, theta_k, v_k, w_k = self.mu
         
-        self.z_k = np.array([self.v_odom, self.w_odom, self.w_imu])
+        self.z_k = np.array([self.v_odom, self.w_odom, self.yaw_imu])
 
         #Predict step
         self.mu = np.array([x_k + v_k*dk*np.cos(theta_k),
@@ -112,7 +116,7 @@ class ExtendedKalmanFilter(Node):
 
         odom = Odometry()
         #Publish the new odom message based on the integrated odom values
-        odom.header.stamp = Time()
+        odom.header.stamp = Time()  
         odom.header.stamp.sec = int(curr_time)
         odom.header.stamp.nanosec = int((curr_time % 1) * 1e9)
 
@@ -120,7 +124,7 @@ class ExtendedKalmanFilter(Node):
         odom.pose.pose.position.y = float(self.mu[1])
         odom.pose.pose.position.z = 0.0
 
-        print(f"w_imu: {self.w_imu} | w_odom: {self.w_odom} | Combined yaw: {self.mu[2]:.2f}")
+        print(f"yaw_imu: {self.yaw_imu} | w_odom: {self.w_odom} | Combined yaw: {self.mu[2]:.2f}")
 
         qt_array = quaternion_from_euler(0,0,self.mu[2])
         quaternion = Quaternion(x=qt_array[0], y=qt_array[1], z=qt_array[2], w=qt_array[3])

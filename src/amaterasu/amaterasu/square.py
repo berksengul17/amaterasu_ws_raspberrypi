@@ -54,17 +54,19 @@ class MoveSquare(Node):
         self.theta_desired = 0
 
         self.r_tolerance = 0.1 # meters
-        self.theta_tolerance = 2 # degrees
+        self.theta_tolerance = 5 # degrees
 
         self.sample_time = 0.01 # s
 
         # PID parameters for turning
         self.kp_turn = 0.03
-        self.ki_turn = 0.0005
-        self.kd_turn = 0.001
+        self.ki_turn = 0.0
+        self.kd_turn = 0.0
 
         self.prev_yaw_error = 0.0
         self.yaw_error_sum = 0.0
+
+        self.max_integral = 100
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
@@ -93,6 +95,7 @@ class MoveSquare(Node):
 
         # Integral term
         self.yaw_error_sum += yaw_error * self.sample_time
+        self.yaw_error_sum = max(min(self.yaw_error_sum, self.max_integral), -self.max_integral)
 
         # Derivative term
         yaw_error_derivative = (yaw_error - self.prev_yaw_error) / self.sample_time
@@ -112,6 +115,7 @@ class MoveSquare(Node):
 
         self.prev_yaw_error = yaw_error
 
+        self.get_logger().info(f"Publishing angular speed: {-angular_z}")
         self.cmd_vel_pub.publish(twist)
 
     def stop(self):
@@ -122,9 +126,7 @@ class MoveSquare(Node):
         self.cmd_vel_pub.publish(twist)
 
     def normalize_angle(self, angle):
-        angle_deg = (angle + 180) % 360
-        if (angle_deg < 0): angle_deg += 360
-        return angle_deg - 180
+        return (angle + 180) % 360 - 180
     
     def calculate_theta_desired(self):
         diff_x = self.goal_x - self.current_x
@@ -140,10 +142,9 @@ class MoveSquare(Node):
     
     def generate_square_waypoints(self, start_x, start_y, size=1.0):
         return [
-            (start_x + size, start_y),         # move right
+            (start_x, start_y + size),         # move left
             (start_x + size, start_y + size),  # move up
-            (start_x, start_y +
-              size),         # move left
+            (start_x + size, start_y),         # move right
             (start_x, start_y),                # move down (back to start)
         ]
 
@@ -151,57 +152,46 @@ class MoveSquare(Node):
         self.theta_desired = self.calculate_theta_desired()
         self.r_desired = self.calculate_distance_to_goal()
 
-        self.get_logger().info(f'Current position: ({self.current_x}, {self.current_y}), {self.current_theta}')
-        self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
+        # self.get_logger().info(f'Current position: ({self.current_x}, {self.current_y}), {self.current_theta}')
+        # self.get_logger().info(f"Theta error: {self.theta_desired:.2f} | Distance to goal: {self.r_desired:.2f}")
 
-        if self.state == 'TURNING':
-            if abs(self.theta_desired) > self.theta_tolerance:
-                self.turn(self.theta_desired)
-            else:
-                self.state = 'MOVING'
-                self.yaw_error_sum = 0.0
-                self.prev_yaw_error = 0.0
+        # If far from goal
+        if self.r_desired > self.r_tolerance:
+            # Integral term
+            self.yaw_error_sum += self.theta_desired * self.sample_time
+            self.yaw_error_sum = max(min(self.yaw_error_sum, self.max_integral), -self.max_integral)
 
-        elif self.state == 'MOVING':
-            if self.r_desired > self.r_tolerance:
-                # Update yaw error and use it for correction
-                yaw_error = self.calculate_theta_desired()
-                
-                # Optional: Reset integral and derivative if needed
-                self.yaw_error_sum += yaw_error * self.sample_time
-                yaw_error_derivative = (yaw_error - self.prev_yaw_error) / self.sample_time
+            # Derivative term
+            yaw_error_derivative = (self.theta_desired - self.prev_yaw_error) / self.sample_time
 
-                # PID controller for angular correction during motion
-                angular_z = (
-                    self.kp_turn * yaw_error +
-                    self.ki_turn * self.yaw_error_sum +
-                    self.kd_turn * yaw_error_derivative
-                )
+            # PID formula
+            angular_z = (
+                self.kp_turn * self.theta_desired +
+                self.ki_turn * self.yaw_error_sum +
+                self.kd_turn * yaw_error_derivative
+            )
 
-                # Clamp angular velocity
-                max_angular_speed = 1.5
-                angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
+            # Limit angular speed (optional)
+            max_angular_speed = 2.5  # rad/s
+            angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
 
-                # Forward velocity is proportional to distance
-                linear_x = self.r_desired * 0.4
+            yaw_error_ratio = max(0.0, 1.0 - abs(self.theta_desired) / 90.0)  # [0,1]
+            linear_x = self.r_desired * 0.4 * yaw_error_ratio if abs(self.theta_desired) < self.theta_tolerance else 0.0
 
-                twist = Twist()
-                twist.linear.x = linear_x
-                twist.angular.z = -angular_z  # Negative due to right-hand rule
+            twist = Twist()
+            twist.linear.x = linear_x
+            twist.angular.z = -angular_z # if abs(self.theta_desired) > self.theta_tolerance else 0.0 # negative due to right-hand rule
 
-                self.cmd_vel_pub.publish(twist)
-                self.prev_yaw_error = yaw_error
+            self.get_logger().info(f"Linear: {linear_x} | Angular: {-angular_z}")
+            self.cmd_vel_pub.publish(twist)
+            self.prev_yaw_error = self.theta_desired
 
-            else:
-                self.state = 'GOAL_REACHED'
-                self.yaw_error_sum = 0.0
-                self.prev_yaw_error = 0.0
+            return False  # Not yet at goal
 
+        # At goal
+        self.stop()
+        return True
 
-        if self.state == 'GOAL_REACHED':
-            return True
-
-        return False
 
     # Update goal coordinates
     def goal_callback(self, goal_request):

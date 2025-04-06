@@ -1,7 +1,10 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include <wiringPi.h>
 #include <chrono>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 
 #define L_EN_PIN 13
 #define R_EN_PIN 12
@@ -19,7 +22,7 @@
 class Turn90 : public rclcpp::Node {
 public:
     Turn90()
-        : Node("turn90"), estimated_yaw(0.0), target_yaw(-90.0), turning(false)
+        : Node("turn90"), estimated_yaw(0.0), target_yaw(90.0), turning(false)
     {
         // Initialize WiringPi
         wiringPiSetupGpio();
@@ -41,17 +44,13 @@ public:
         pwmSetRange(1024);
         pwmSetClock(192);
 
-        // Subscribe to IMU topic (only angular velocity z)
-        imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(
-            "/imu/z", 10, std::bind(&Turn90::imuCallback, this, std::placeholders::_1));
-
-        // Timer to periodically update yaw estimation
-        timer = this->create_wall_timer(
-            std::chrono::milliseconds(10), 
-            std::bind(&Turn90::updateYaw, this)
-        );
+        odom_sub = this->create_subscription<nav_msgs::msg::Odometry>(
+            "/ekf_odom", 10, std::bind(&Turn90::updateYaw, this, std::placeholders::_1));
 
         last_time = this->now();
+
+        turnRight();
+        turning = true;
         
         RCLCPP_INFO(this->get_logger(), "Turn90 Node Initialized");
     }
@@ -62,8 +61,7 @@ public:
     }
 
 private:
-    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
-    rclcpp::TimerBase::SharedPtr timer;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
     
     double estimated_yaw;
     double target_yaw;
@@ -71,56 +69,58 @@ private:
     rclcpp::Time last_time;
     double last_gyro_z = 0.0;
 
-    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg) {
-        last_gyro_z = msg->angular_velocity.z; // Read angular velocity (rad/s)
-    }
-
-    void updateYaw() {
-        rclcpp::Time current_time = this->now();
-        double dt = (current_time - last_time).seconds(); // Time step in seconds
-        last_time = current_time;
+    void updateYaw(const nav_msgs::msg::Odometry::SharedPtr msg) {
+        // Extract quaternion from odometry
+        const auto& orientation = msg->pose.pose.orientation;
+        tf2::Quaternion q(
+            orientation.x,
+            orientation.y,
+            orientation.z,
+            orientation.w
+        );
     
-        // Integrate angular velocity to estimate yaw angle
-        estimated_yaw += last_gyro_z * dt * (180.0 / M_PI); // Convert rad to degrees
-        RCLCPP_INFO(this->get_logger(), "Estimated yaw = %.2f", estimated_yaw);
+        // Convert quaternion to roll, pitch, yaw
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
     
-        if (!turning) {
-            turning = true;
-            estimated_yaw = 0.0; // Reset yaw estimation when starting
-            turnRight(); // Start turning
-            RCLCPP_INFO(this->get_logger(), "Started turning...");
-        }
+        // Convert yaw to degrees and store as estimated yaw
+        estimated_yaw = yaw * (180.0 / M_PI);
     
-        // **Correct the stopping condition**
-        double error = fabs(fabs(target_yaw) - fabs(estimated_yaw));
-        
-        if (turning && fabs(error) <= 2.0) { 
+        // Normalize to [-180, 180]
+        estimated_yaw = std::fmod(estimated_yaw + 180.0, 360.0) - 180.0;
+    
+        // Compute yaw error to target
+        double error = std::fabs(std::fabs(target_yaw) - std::fabs(estimated_yaw));
+    
+        RCLCPP_INFO(this->get_logger(), "Current Yaw: %.2f | Target: %.2f | Error: %.2f", estimated_yaw, target_yaw, error);
+    
+        // Stopping logic
+        if (turning && error <= 5.0) {
             stopMotors();
-            turning = false;  // Stop turning
+            turning = false;
             RCLCPP_INFO(this->get_logger(), "Turn Completed! Estimated Yaw = %.2f degrees", estimated_yaw);
-            timer->cancel(); // Disable the timer
-        } else {
-            changeSpeed(static_cast<int>(error * 1.5)); // Increase P-Gain for faster correction
+        } else if (turning) {
+            changeSpeed(error / 90.0 * 1.0);
         }
-    }
+    }    
     
     void turnRight() {
-        digitalWrite(FL_IN1_PIN, HIGH);
-        digitalWrite(FL_IN2_PIN, LOW);
-        digitalWrite(FR_IN1_PIN, LOW);
-        digitalWrite(FR_IN2_PIN, HIGH);
+        digitalWrite(FL_IN1_PIN, LOW);
+        digitalWrite(FL_IN2_PIN, HIGH);
+        digitalWrite(FR_IN1_PIN, HIGH);
+        digitalWrite(FR_IN2_PIN, LOW);
 
-        digitalWrite(RL_IN1_PIN, HIGH);
-        digitalWrite(RL_IN2_PIN, LOW);
-        digitalWrite(RR_IN1_PIN, LOW);
-        digitalWrite(RR_IN2_PIN, HIGH);
+        digitalWrite(RL_IN1_PIN, LOW);
+        digitalWrite(RL_IN2_PIN, HIGH);
+        digitalWrite(RR_IN1_PIN, HIGH);
+        digitalWrite(RR_IN2_PIN, LOW);
 
-        RCLCPP_INFO(this->get_logger(), "Turning Right...");
+        RCLCPP_INFO(this->get_logger(), "Turning left...");
     }
 
-    void changeSpeed(int speed) {
+    void changeSpeed(double speed) {
         // Constrain speed within valid range (min 200, max 1024)
-        int constrained_speed = std::max(300, std::min(speed, 500)); 
+        int constrained_speed = static_cast<int>(std::max(0.5, std::min(speed, 1.0)) * 500.0);
     
         RCLCPP_INFO(this->get_logger(), "Speed changed: %d", constrained_speed);
         pwmWrite(L_EN_PIN, constrained_speed);

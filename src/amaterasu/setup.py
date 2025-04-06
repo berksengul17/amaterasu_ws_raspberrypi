@@ -26,7 +26,8 @@ setup(
             'ball_goal_client = amaterasu.ball_goal_client:main',
             'ekf = amaterasu.bekir_ekf:main',
             'imu_pub = amaterasu.imu_pub:main',
-            'square = amaterasu.square:main'
+            'square = amaterasu.square:main',
+            'turn_90 = amaterasu.turn_90:main'
         ],
     },
 )

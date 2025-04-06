@@ -15,7 +15,7 @@
 #include <array>
 
 #define MOTOR_PPR 39.0f
-#define SAMPLE_TIME_MS 10
+#define SAMPLE_TIME_MS 100
 #define PWM_FREQUENCY 800
 #define TICK_ACCUM_WINDOW 5
 
@@ -24,9 +24,9 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 0.01f)),
-        ki1_(declare_parameter("ki", 0.0f)),
-        kd1_(declare_parameter("kd", 0.003f)),
+        kp1_(declare_parameter("kp", 0.03f)),
+        ki1_(declare_parameter("ki", 0.12f)),
+        kd1_(declare_parameter("kd", 0.001875f)),
         robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
                     {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
                     {PWM_FREQUENCY, L_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
