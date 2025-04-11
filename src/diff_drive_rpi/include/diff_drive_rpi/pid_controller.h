@@ -17,6 +17,7 @@ public:
     void set_gains(float kp, float ki, float kd);
     void set_sample_time(uint new_sample_time_ms);
     float constrain(float x, float lower, float upper);
+    void reset();
 
 private:
     uint _sample_time_ms;

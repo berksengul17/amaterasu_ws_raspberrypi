@@ -66,7 +66,7 @@ class ExtendedKalmanFilter(Node):
         self.timer = self.create_timer(self.dt, self.run)
 
     def normalize_angle(self, angle):
-        return (angle + 180.0) % 360.0 - 180.0
+        return (angle + np.pi) % (2 * np.pi) - np.pi
 
     def imu_callback(self, msg):
         q = msg.orientation
@@ -80,7 +80,8 @@ class ExtendedKalmanFilter(Node):
     def run(self):
         curr_time = time.time()
         dk = curr_time - self.last_time
-        self.last_time = time.time()
+        self.last_time = curr_time
+
         x_k, y_k, theta_k, v_k, w_k = self.mu
         
         self.z_k = np.array([self.v_odom, self.w_odom, self.yaw_imu])

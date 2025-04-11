@@ -15,17 +15,16 @@
 #include <array>
 
 #define MOTOR_PPR 39.0f
-#define SAMPLE_TIME_MS 100
+#define SAMPLE_TIME_MS 10
 #define PWM_FREQUENCY 800
-#define TICK_ACCUM_WINDOW 5
 
 class RobotNode : public rclcpp::Node {
 public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 0.03f)),
-        ki1_(declare_parameter("ki", 0.12f)),
+        kp1_(declare_parameter("kp", 0.01f)),
+        ki1_(declare_parameter("ki", 0.005f)),
         kd1_(declare_parameter("kd", 0.001875f)),
         robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
                     {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
@@ -161,7 +160,6 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
         linear_ = msg->linear.x;
         angular_ = msg->angular.z;
-        // RCLCPP_INFO(this->get_logger(), "Received cmd_vel: linear=%.2f, angular=%.2f", linear_, angular_);
     }
 
     void robotCallback(const geometry_msgs::msg::Vector3::SharedPtr msg) {

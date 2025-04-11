@@ -15,6 +15,7 @@ public:
     int m_isConnectionOk, int pwmFrequency);
     void write_int(int pwm);
     void write(float duty_cycle);
+    void brake();
 
 private:
     uint _en_pin;

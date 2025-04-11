@@ -70,3 +70,9 @@ void PID::compute(void)
 float PID::constrain(float x, float lower, float upper) {
     return (x < lower) ? lower : (x > upper) ? upper : x;
 }
+
+void PID::reset() {
+    _out_sum = 0.0f;
+    _last_input = 0.0f;
+    *_my_output = 0.0f;
+}

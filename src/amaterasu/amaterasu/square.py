@@ -142,9 +142,9 @@ class MoveSquare(Node):
     
     def generate_square_waypoints(self, start_x, start_y, size=1.0):
         return [
-            (start_x, start_y + size),         # move left
-            (start_x + size, start_y + size),  # move up
             (start_x + size, start_y),         # move right
+            (start_x + size, start_y + size),  # move up
+            (start_x, start_y + size),         # move left
             (start_x, start_y),                # move down (back to start)
         ]
 
@@ -153,7 +153,7 @@ class MoveSquare(Node):
         self.r_desired = self.calculate_distance_to_goal()
 
         # self.get_logger().info(f'Current position: ({self.current_x}, {self.current_y}), {self.current_theta}')
-        # self.get_logger().info(f"Theta error: {self.theta_desired:.2f} | Distance to goal: {self.r_desired:.2f}")
+        self.get_logger().info(f"Theta error: {self.theta_desired:.2f} | Distance to goal: {self.r_desired:.2f}")
 
         # If far from goal
         if self.r_desired > self.r_tolerance:
@@ -172,7 +172,7 @@ class MoveSquare(Node):
             )
 
             # Limit angular speed (optional)
-            max_angular_speed = 2.5  # rad/s
+            max_angular_speed = 1.5  # rad/s
             angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
 
             yaw_error_ratio = max(0.0, 1.0 - abs(self.theta_desired) / 90.0)  # [0,1]

@@ -66,5 +66,10 @@ void DCMotor::write(float duty_cycle)
     write_int(static_cast<int>(duty_cycle * TOP));
 }
 
+void DCMotor::brake() {
+    digitalWrite(this->_in1_pin, 1);
+    digitalWrite(this->_in2_pin, 1);
+    pwmWrite(this->_en_pin, 0);
+}
 
 

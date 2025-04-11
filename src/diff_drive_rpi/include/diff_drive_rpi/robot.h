@@ -20,6 +20,7 @@
 #define ROBOT_MIN_LINEAR_M_S (-1.0)
 #define ROBOT_MAX_ANGULAR_R_S 2.0
 #define ROBOT_MIN_ANGULAR_R_S (-2.0)
+#define TICK_ACCUM_WINDOW 5
 
 struct MotorPins
 {
@@ -93,6 +94,12 @@ private:
     float _r_input;
     float _r_output;
     float _r_setpoint;
+    float _tick_buffer_left[TICK_ACCUM_WINDOW];
+    float _tick_buffer_right[TICK_ACCUM_WINDOW];
+    float _l_ticks;
+    float _r_ticks;
+    int _sample_counter;
+    int _dead_stop_counter;
     float _linear;
     float _angular;
     float _left_last_error;
