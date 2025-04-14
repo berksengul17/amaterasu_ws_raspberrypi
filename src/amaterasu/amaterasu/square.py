@@ -17,9 +17,6 @@ from sensor_msgs.msg import Imu
 class MoveSquare(Node):
     def __init__(self):
         super().__init__("move_square")
-        
-        # TURNING, MOVING, GOAL_REACHED
-        self.state = "TURNING"
 
         self.x = 0.0
         self.y = 0.0
@@ -27,9 +24,6 @@ class MoveSquare(Node):
 
         self.start_x = None
         self.start_y = None       
-
-        self.square_distance = 1 # meter
-        self.turn_count = 0
 
         self.odom_sub = self.create_subscription(Odometry, "/ekf_odom", self.odom_callback, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
@@ -53,20 +47,25 @@ class MoveSquare(Node):
         self.r_desired = 0
         self.theta_desired = 0
 
-        self.r_tolerance = 0.1 # meters
-        self.theta_tolerance = 5 # degrees
+        self.r_tolerance = 0.05 # meters
+        self.theta_tolerance = 3 # degrees
 
         self.sample_time = 0.01 # s
 
         # PID parameters for turning
-        self.kp_turn = 0.03
-        self.ki_turn = 0.0
-        self.kd_turn = 0.0
+        self.kp_turn = 0.3
+        self.ki_turn = 0.01
+        self.kd_turn = 0.5
 
         self.prev_yaw_error = 0.0
         self.yaw_error_sum = 0.0
 
         self.max_integral = 100
+
+        self.turn_start_time = None
+        self.turn_duration = 0.0  # Set the turn duration (in seconds)
+        self.is_turning = False
+        self.turn_speed = 2.0 # radians/s
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
@@ -89,10 +88,7 @@ class MoveSquare(Node):
 
         self.cmd_vel_pub.publish(twist)
 
-    def turn(self, yaw_error):
-        twist = Twist()
-        twist.linear.x = 0.0
-
+    def calculate_w(self, yaw_error):
         # Integral term
         self.yaw_error_sum += yaw_error * self.sample_time
         self.yaw_error_sum = max(min(self.yaw_error_sum, self.max_integral), -self.max_integral)
@@ -102,21 +98,10 @@ class MoveSquare(Node):
 
         # PID formula
         angular_z = (
-            self.kp_turn * yaw_error +
-            self.ki_turn * self.yaw_error_sum +
-            self.kd_turn * yaw_error_derivative
+            self.kp_turn * yaw_error
         )
 
-        # Limit angular speed (optional)
-        max_angular_speed = 1.5  # rad/s
-        angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
-
-        twist.angular.z = -angular_z  # negative because of right-hand rule
-
-        self.prev_yaw_error = yaw_error
-
-        self.get_logger().info(f"Publishing angular speed: {-angular_z}")
-        self.cmd_vel_pub.publish(twist)
+        return angular_z
 
     def stop(self):
         twist = Twist()
@@ -133,7 +118,7 @@ class MoveSquare(Node):
         diff_y = self.goal_y - self.current_y
         theta = math.atan2(diff_y, diff_x) * (180.0 / np.pi) # degrees
         # self.get_logger().info(f"Curent theta: {self.current_theta} | Calculated theta: {theta}")
-        return self.normalize_angle(self.current_theta - theta)
+        return self.normalize_angle(theta - self.current_theta)
 
     def calculate_distance_to_goal(self):
         diff_x = self.current_x - self.goal_x
@@ -147,52 +132,7 @@ class MoveSquare(Node):
             (start_x, start_y + size),         # move left
             (start_x, start_y),                # move down (back to start)
         ]
-
-    def update(self):
-        self.theta_desired = self.calculate_theta_desired()
-        self.r_desired = self.calculate_distance_to_goal()
-
-        # self.get_logger().info(f'Current position: ({self.current_x}, {self.current_y}), {self.current_theta}')
-        self.get_logger().info(f"Theta error: {self.theta_desired:.2f} | Distance to goal: {self.r_desired:.2f}")
-
-        # If far from goal
-        if self.r_desired > self.r_tolerance:
-            # Integral term
-            self.yaw_error_sum += self.theta_desired * self.sample_time
-            self.yaw_error_sum = max(min(self.yaw_error_sum, self.max_integral), -self.max_integral)
-
-            # Derivative term
-            yaw_error_derivative = (self.theta_desired - self.prev_yaw_error) / self.sample_time
-
-            # PID formula
-            angular_z = (
-                self.kp_turn * self.theta_desired +
-                self.ki_turn * self.yaw_error_sum +
-                self.kd_turn * yaw_error_derivative
-            )
-
-            # Limit angular speed (optional)
-            max_angular_speed = 1.5  # rad/s
-            angular_z = max(min(angular_z, max_angular_speed), -max_angular_speed)
-
-            yaw_error_ratio = max(0.0, 1.0 - abs(self.theta_desired) / 90.0)  # [0,1]
-            linear_x = self.r_desired * 0.4 * yaw_error_ratio if abs(self.theta_desired) < self.theta_tolerance else 0.0
-
-            twist = Twist()
-            twist.linear.x = linear_x
-            twist.angular.z = -angular_z # if abs(self.theta_desired) > self.theta_tolerance else 0.0 # negative due to right-hand rule
-
-            self.get_logger().info(f"Linear: {linear_x} | Angular: {-angular_z}")
-            self.cmd_vel_pub.publish(twist)
-            self.prev_yaw_error = self.theta_desired
-
-            return False  # Not yet at goal
-
-        # At goal
-        self.stop()
-        return True
-
-
+        
     # Update goal coordinates
     def goal_callback(self, goal_request):
         self.goal_x = goal_request.x
@@ -214,95 +154,49 @@ class MoveSquare(Node):
         self.get_logger().info("Executing goal...")
         feedback = GoToGoal.Feedback()
 
-        # Step 1: Go to initial goal
-        while not self.update():
-            feedback.current_x = float(self.current_x)
-            feedback.current_y = float(self.current_y)
-            feedback.distance = float(self.calculate_distance_to_goal())
-            goal_handle.publish_feedback(feedback)
-            self.execute_rate.sleep()
-        
-        self.stop()
-        self.get_logger().info("Reached initial goal.")
+        # Add initial goal to square waypoints
+        square_waypoints = [(goal_handle.request.x, goal_handle.request.y)] + \
+                        self.generate_square_waypoints(goal_handle.request.x, goal_handle.request.y)
 
-        # Step 2: Generate square waypoints
-        square_waypoints = self.generate_square_waypoints(self.goal_x, self.goal_y)
+        for idx, (gx, gy) in enumerate(square_waypoints):
+            self.goal_x, self.goal_y = gx, gy
 
-        # Step 3: Follow each corner
-        for idx, (next_x, next_y) in enumerate(square_waypoints):
-            self.goal_x = next_x
-            self.goal_y = next_y
-            self.get_logger().info(f"Moving to square corner {idx+1}: ({next_x}, {next_y})")
+            while rclpy.ok():
+                self.r_desired = self.calculate_distance_to_goal()
+                self.theta_desired = self.calculate_theta_desired()
 
-            error = self.calculate_theta_desired()
-            if (abs(error) > 5):
-                self.state = "TURNING"
-            else:
-                self.state = "MOVING"
+                yaw_error = self.theta_desired
 
-            self.get_logger().info(f"Error: {idx+1}: {error} - {self.state}")
+                # Heading correction
+                angular_z = self.calculate_w(yaw_error)
 
-            while not self.update():
-                feedback.current_x = float(self.current_x)
-                feedback.current_y = float(self.current_y)
-                feedback.distance = float(self.calculate_distance_to_goal())
+                # Linear speed only if facing target
+                linear_x = 0.15 if abs(yaw_error) < self.theta_tolerance else 0.0
+
+                # Stop condition
+                if self.r_desired < self.r_tolerance:
+                    self.stop()
+                    break
+
+                twist = Twist()
+                twist.linear.x = linear_x
+                twist.angular.z = angular_z
+                self.cmd_vel_pub.publish(twist)
+
+                feedback.current_x = self.current_x
+                feedback.current_y = self.current_y
+                feedback.distance = self.r_desired
                 goal_handle.publish_feedback(feedback)
+
                 self.execute_rate.sleep()
 
-            self.stop()
-            self.get_logger().info(f"Reached corner {idx+1}")
+            self.get_logger().info(f"Reached waypoint {idx+1}")
 
-        # Done!
-        goal_handle.succeed()
+        self.stop()
         result = GoToGoal.Result()
         result.goal_reached = True
-        self.get_logger().info(f'Square path complete. Returning result: {result.goal_reached}')
+        goal_handle.succeed()
         return result
-    
-    def move_square(self):
-        # square is completed
-        if self.turn_count == 4:
-            self.stop()
-            self.get_logger().info("Square is completed...")
-            return
-        
-        if self.state == "forward":
-            if self.turn_count == 0:
-                if self.start_x == None and self.start_y == None:
-                    self.start_x = self.x
-                    self.start_y = self.y
-
-                self.get_logger().info(f"Started the square motion. Start X: {self.start_x} | Start Y: {self.start_y}")
-
-            # if self.turn_count > 0:
-            #     self.get_logger().info(f"Current position: {self.x} - {self.y}")
-            #     self.stop()
-            #     return 
-            
-            dist = math.sqrt((self.start_x - self.x)**2 + (self.start_y - self.y)**2)
-            self.get_logger().info(f"Travelled distance: {dist}")
-            
-            self.forward((1 - dist) * 0.4)
-
-            # one side is completed
-            if dist >= 0.95:
-                self.stop()
-                self.state = "turning"
-                self.turn_count += 1
-                # self.turn_left()
-                self.get_logger().info(f"Stopped. Travelled distance: {dist}")
-        
-        if self.state == "turning":
-            yaw_diff = self.normalize_angle(self.turn_count * 90.0) - self.yaw
-            self.get_logger().info(f"{self.turn_count * 90.0} | {self.yaw} | Yaw Error: {yaw_diff}")
-            
-            if abs(yaw_diff) <= 1.5 and self.state != "stopped":
-                self.state = "forward"
-                self.start_x = self.x
-                self.start_y = self.y
-                self.get_logger().info("Turn completed. Going forward...")
-            else:
-                self.turn_left(yaw_diff)
 
 def main(args=None):
     rclpy.init(args=args)

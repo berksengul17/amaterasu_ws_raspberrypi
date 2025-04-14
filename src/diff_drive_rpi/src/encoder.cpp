@@ -6,7 +6,7 @@
 #include <unistd.h>  // For usleep()
 #include <robot.h>
 
-#define DEBOUNCE_TIME_MS 1000  // Ignore signals faster than 1ms
+#define DEBOUNCE_TIME_MS 500  // Ignore signals faster than 1ms
 #define MAX_TIME_DIFF 0.05f  // seconds
 
 Encoder::Encoder(int pin) : _pin(pin), _pulses(0), _running(false), _speed(0) {

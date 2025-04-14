@@ -23,7 +23,7 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 0.01f)),
+        kp1_(declare_parameter("kp", 0.1f)),
         ki1_(declare_parameter("ki", 0.005f)),
         kd1_(declare_parameter("kd", 0.001875f)),
         robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
@@ -98,8 +98,7 @@ private:
         rear_left_encoder_->stop();
         rear_right_encoder_->stop();
     }
-
-
+    
     rcl_interfaces::msg::SetParametersResult parameterCallback(const std::vector<rclcpp::Parameter> &parameters) {
         rcl_interfaces::msg::SetParametersResult result;
         result.successful = true;  // Default to successful unless an error occurs
@@ -127,16 +126,6 @@ private:
         return result;
     }
 
-    void printState(RobotState state, RobotOdometry odometry)
-    {
-        printf(
-                // diff setpoint,wheel setpoint, speed
-                "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-                state.l_ref_speed, state.r_ref_speed, state.l_speed, state.r_speed, state.l_effort, state.r_effort,
-                odometry.x_pos, odometry.y_pos, odometry.theta, odometry.v, odometry.w
-                );
-    }
-
     geometry_msgs::msg::Quaternion quaternionFromEuler(double roll, double pitch, double yaw) {
         geometry_msgs::msg::Quaternion q;
 
@@ -160,6 +149,8 @@ private:
     void cmdVelCallback(const geometry_msgs::msg::Twist::SharedPtr msg) {
         linear_ = msg->linear.x;
         angular_ = msg->angular.z;
+
+        printf("Linear: %.2f | Angular: %.2f\n", linear_, angular_);
     }
 
     void robotCallback(const geometry_msgs::msg::Vector3::SharedPtr msg) {

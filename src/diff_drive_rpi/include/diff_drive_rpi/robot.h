@@ -13,14 +13,13 @@
 #define L_MOTOR_MAX_SPEED 1.0f
 #define R_MOTOR_MIN_SPEED -1.0f
 #define R_MOTOR_MAX_SPEED 1.0f
-#define ROBOT_MOTOR_PPR 39.0f // 20.0f
-#define ROBOT_WHEEL_RADIUS 0.0325f // m
-#define ROBOT_WHEEL_SEPARATION 0.13f // m
+#define ROBOT_MOTOR_PPR 40.0f // 20.0f
+#define ROBOT_WHEEL_RADIUS 0.034f // m
+#define ROBOT_WHEEL_SEPARATION 0.296f // m
 #define ROBOT_MAX_LINEAR_M_S 1.0
 #define ROBOT_MIN_LINEAR_M_S (-1.0)
 #define ROBOT_MAX_ANGULAR_R_S 2.0
 #define ROBOT_MIN_ANGULAR_R_S (-2.0)
-#define TICK_ACCUM_WINDOW 5
 
 struct MotorPins
 {
@@ -48,8 +47,8 @@ struct RobotState
     float r_speed;
     float l_effort;
     float r_effort;
-    float l_ref_speed;
-    float r_ref_speed;
+    float prev_l_setpoint;
+    float prev_r_setpoint;
 };
 
 struct RobotOdometry
@@ -94,12 +93,14 @@ private:
     float _r_input;
     float _r_output;
     float _r_setpoint;
-    float _tick_buffer_left[TICK_ACCUM_WINDOW];
-    float _tick_buffer_right[TICK_ACCUM_WINDOW];
     float _l_ticks;
     float _r_ticks;
-    int _sample_counter;
     int _dead_stop_counter;
+    bool new_command;
+    float l_sum;
+    float r_sum;
+    int l_count;
+    int r_count;
     float _linear;
     float _angular;
     float _left_last_error;

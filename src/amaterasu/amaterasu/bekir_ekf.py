@@ -31,7 +31,7 @@ class ExtendedKalmanFilter(Node):
 
         # sensor noise
         self.sigma_z_sq = np.array([[0.1, 0, 0], #noise in v_odom
-                                    [0, 0.1, 0], #noise in w_odom
+                                    [0, 0.02, 0], #noise in w_odom
                                     [0, 0, 0.02]]) #noise in yaw_imu
 
         ## DEĞİŞTİR
@@ -61,7 +61,7 @@ class ExtendedKalmanFilter(Node):
         self.odom_pub = self.create_publisher(Odometry, "/ekf_odom", 10)
         self.odomBroadcaster = TransformBroadcaster(self)
         
-        self.dt = 0.01 # 10ms
+        self.dt = 0.01 # 100ms
         self.last_time = time.time()
         self.timer = self.create_timer(self.dt, self.run)
 
@@ -120,12 +120,14 @@ class ExtendedKalmanFilter(Node):
         odom.header.stamp = Time()  
         odom.header.stamp.sec = int(curr_time)
         odom.header.stamp.nanosec = int((curr_time % 1) * 1e9)
+        odom.header.frame_id = "odom"
+        odom.child_frame_id = "base_link"
 
         odom.pose.pose.position.x = float(self.mu[0])
         odom.pose.pose.position.y = float(self.mu[1])
         odom.pose.pose.position.z = 0.0
 
-        print(f"yaw_imu: {self.yaw_imu} | w_odom: {self.w_odom} | Combined yaw: {self.mu[2]:.2f}")
+        print(f"yaw_imu: {self.yaw_imu} | w_odom: {self.w_odom:.3f} | Combined yaw: {self.mu[2]:.2f}")
 
         qt_array = quaternion_from_euler(0,0,self.mu[2])
         quaternion = Quaternion(x=qt_array[0], y=qt_array[1], z=qt_array[2], w=qt_array[3])
