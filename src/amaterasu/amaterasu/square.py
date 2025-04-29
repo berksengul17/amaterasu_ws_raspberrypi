@@ -1,5 +1,6 @@
 import numpy as np
-import math 
+import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -25,7 +26,7 @@ class MoveSquare(Node):
         self.start_x = None
         self.start_y = None       
 
-        self.odom_sub = self.create_subscription(Odometry, "/ekf_odom", self.odom_callback, 10)
+        self.odom_sub = self.create_subscription(Odometry, "/localization", self.odom_callback, 10)
         self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
 
         self.draw_square_action_service = ActionServer(
@@ -47,13 +48,13 @@ class MoveSquare(Node):
         self.r_desired = 0
         self.theta_desired = 0
 
-        self.r_tolerance = 0.05 # meters
-        self.theta_tolerance = 3 # degrees
+        self.r_tolerance = 0.1 # meters
+        self.theta_tolerance = 0.05 # radians ~ 5 degrees
 
-        self.sample_time = 0.01 # s
+        self.sample_time = 0.03 # s
 
         # PID parameters for turning
-        self.kp_turn = 0.3
+        self.kp_turn = 0.63
         self.ki_turn = 0.01
         self.kd_turn = 0.5
 
@@ -65,7 +66,7 @@ class MoveSquare(Node):
         self.turn_start_time = None
         self.turn_duration = 0.0  # Set the turn duration (in seconds)
         self.is_turning = False
-        self.turn_speed = 2.0 # radians/s
+        self.turn_speed = 1.0 # radians/s
 
         self.execute_rate = self.create_rate(1/self.sample_time)
 
@@ -77,10 +78,7 @@ class MoveSquare(Node):
         orientation_q = msg.pose.pose.orientation
         quaternion = (orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w)
         _, _, self.current_theta = euler_from_quaternion(quaternion)
-        
-        # convert to degrees
-        self.current_theta = self.current_theta * (180.0 / np.pi)
-    
+            
     def forward(self, speed):
         twist = Twist()
         twist.linear.x = speed
@@ -101,6 +99,9 @@ class MoveSquare(Node):
             self.kp_turn * yaw_error
         )
 
+        # if (angular_z > 0 and angular_z < 1.5): angular_z = 1.5
+        # elif (angular_z < 0 and angular_z > -1.5): angular_z = -1.5
+
         return angular_z
 
     def stop(self):
@@ -111,12 +112,12 @@ class MoveSquare(Node):
         self.cmd_vel_pub.publish(twist)
 
     def normalize_angle(self, angle):
-        return (angle + 180) % 360 - 180
+        return (angle + np.pi) % (2 * np.pi) - np.pi
     
     def calculate_theta_desired(self):
         diff_x = self.goal_x - self.current_x
         diff_y = self.goal_y - self.current_y
-        theta = math.atan2(diff_y, diff_x) * (180.0 / np.pi) # degrees
+        theta = math.atan2(diff_y, diff_x)
         # self.get_logger().info(f"Curent theta: {self.current_theta} | Calculated theta: {theta}")
         return self.normalize_angle(theta - self.current_theta)
 
@@ -124,8 +125,28 @@ class MoveSquare(Node):
         diff_x = self.current_x - self.goal_x
         diff_y = self.current_y - self.goal_y
         return math.sqrt((diff_x * diff_x) + (diff_y * diff_y))
+        
+    def calculate_primary_direction_tolerance(self):
+        # Calculate the differences in x and y directions
+        diff_x = abs(self.goal_x - self.current_x)
+        diff_y = abs(self.goal_y - self.current_y)
+
+        # Define the base tolerance values
+        tolerance = 0.04
+
+        # If the goal is primarily along the x axis, apply tolerance in x
+        if diff_x > diff_y:
+            # Only check tolerance for x direction
+            return 'x', tolerance
+        # If the goal is primarily along the y axis, apply tolerance in y
+        elif diff_y > diff_x:
+            # Only check tolerance for y direction
+            return 'y', tolerance
+        # If the goal is diagonal, apply the same tolerance for both axes
+        else:
+            return 'xy', tolerance
     
-    def generate_square_waypoints(self, start_x, start_y, size=1.0):
+    def generate_square_waypoints(self, start_x, start_y, size=0.8):
         return [
             (start_x + size, start_y),         # move right
             (start_x + size, start_y + size),  # move up
@@ -156,43 +177,89 @@ class MoveSquare(Node):
 
         # Add initial goal to square waypoints
         square_waypoints = [(goal_handle.request.x, goal_handle.request.y)] + \
-                        self.generate_square_waypoints(goal_handle.request.x, goal_handle.request.y)
+                             self.generate_square_waypoints(goal_handle.request.x, goal_handle.request.y)
 
         for idx, (gx, gy) in enumerate(square_waypoints):
             self.goal_x, self.goal_y = gx, gy
+            direction, tolerance = self.calculate_primary_direction_tolerance()
 
+            self.get_logger().info(f"Moving to waypoint {idx+1}: ({gx}, {gy})")
+            self.get_logger().info(f"Direction: {direction} | Tolerance: {tolerance}")
+
+            if (self.calculate_distance_to_goal() < self.r_tolerance):
+                continue
+
+            # Turn to desired orientation first
             while rclpy.ok():
-                self.r_desired = self.calculate_distance_to_goal()
                 self.theta_desired = self.calculate_theta_desired()
 
-                yaw_error = self.theta_desired
+                # Turn until orientation is correct
+                if abs(self.theta_desired) <= self.theta_tolerance:
+                    i = 0
+                    while (i<10):
+                        self.stop()
+                        self.execute_rate.sleep()
+                        i += 1
 
-                # Heading correction
-                angular_z = self.calculate_w(yaw_error)
-
-                # Linear speed only if facing target
-                linear_x = 0.15 if abs(yaw_error) < self.theta_tolerance else 0.0
-
-                # Stop condition
-                if self.r_desired < self.r_tolerance:
-                    self.stop()
                     break
 
+                linear_x = 0.0
+                angular_z = self.calculate_w(self.theta_desired)
+
                 twist = Twist()
-                twist.linear.x = linear_x
-                twist.angular.z = angular_z
+                twist.linear.x = float(linear_x)
+                twist.angular.z = float(angular_z)
                 self.cmd_vel_pub.publish(twist)
 
-                feedback.current_x = self.current_x
-                feedback.current_y = self.current_y
-                feedback.distance = self.r_desired
+                feedback.current_x = float(self.current_x)
+                feedback.current_y = float(self.current_y)
+                feedback.distance = float(self.r_desired)
                 goal_handle.publish_feedback(feedback)
 
                 self.execute_rate.sleep()
 
-            self.get_logger().info(f"Reached waypoint {idx+1}")
+            # Now move forward to the goal
+            while rclpy.ok():
+                self.r_desired = self.calculate_distance_to_goal()
+                self.theta_desired = self.calculate_theta_desired()
 
-        self.stop()
+                # Stop condition
+                if direction == 'x':
+                    if abs(self.current_x - self.goal_x) < tolerance:
+                        self.stop()
+                        break
+                elif direction == 'y':
+                    if abs(self.current_y - self.goal_y) < tolerance:
+                        self.stop()
+                        break
+                elif direction == 'xy':
+                    # If moving diagonally, check both x and y tolerances
+                    if (abs(self.current_x - self.goal_x) < tolerance and
+                        abs(self.current_y - self.goal_y) < tolerance):
+                        self.stop()
+                        break
+
+                # Move forward
+                linear_x = 0.3
+                angular_z = 0.0
+
+                twist = Twist()
+                twist.linear.x = float(linear_x)
+                twist.angular.z = float(angular_z)
+                self.cmd_vel_pub.publish(twist)
+
+                feedback.current_x = float(self.current_x)
+                feedback.current_y = float(self.current_y)
+                feedback.distance = float(self.r_desired)
+                goal_handle.publish_feedback(feedback)
+
+                self.execute_rate.sleep()
+
+            self.get_logger().info(f"Reached waypoint {idx+1} | Current position: ({self.current_x}, {self.current_y})")
+
+        self.stop()  # Stop the robot after reaching all waypoints
+
+        # Finish goal
         result = GoToGoal.Result()
         result.goal_reached = True
         goal_handle.succeed()

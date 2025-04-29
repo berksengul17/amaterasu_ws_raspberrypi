@@ -16,7 +16,9 @@ class ImuPublisher(Node):
         self.get_logger().info('Countdown ended.')
         self.ser.reset_input_buffer()
 
+        self.last_w = 0.0
         self.last_yaw = 0.0
+        self.last_accX = 0.0
 
         self.imu_publisher = self.create_publisher(Imu, '/imu/z', 10)
 
@@ -25,9 +27,19 @@ class ImuPublisher(Node):
 
     def publish_imu_data(self):
         yaw = self.last_yaw
+        accX = self.last_accX
+        w = self.last_w
         if (self.ser.in_waiting > 0):
-            yaw = float(self.ser.readline().decode('utf-8').rstrip()) * (np.pi / 180.0) # in rad/s
+            line = self.ser.readline().decode('utf-8').rstrip()
+            values = line.split(" | ")
+            
+            w = float(values[0]) * np.pi / 180.0
+            yaw = float(values[1]) * np.pi / 180.0
+            accX = -float(values[2]) * 9.81
+
+            self.last_w = w
             self.last_yaw = yaw
+            self.last_accX = accX
 
         # Create Imu message
         imu_msg = Imu()
@@ -40,9 +52,12 @@ class ImuPublisher(Node):
         imu_msg.orientation.z = q[2]
         imu_msg.orientation.w = q[3]
 
+        imu_msg.linear_acceleration.x = accX
+        imu_msg.angular_velocity.z = w
+
         # Publish message
         self.imu_publisher.publish(imu_msg)
-        self.get_logger().info(f'Published yaw: {yaw:.6f} rad/s')
+        self.get_logger().info(f'Published w: {w:.6f} | yaw: {yaw:.6f} | Acceleration: {accX:.6f}')
 
 def main(args=None):
     rclpy.init(args=args)

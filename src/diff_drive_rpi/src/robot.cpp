@@ -51,10 +51,13 @@ _r_pid(&_r_input, &_r_output, &_r_setpoint, kp, ki, kd, sample_time_ms)
 }
 
 Robot::~Robot() {
-    _fl_motor.write(0.0f);
-    _rl_motor.write(0.0f);
-    _fr_motor.write(0.0f);
-    _rr_motor.write(0.0f);
+    _l_pid.reset();
+    _r_pid.reset();
+
+    _fl_motor.brake();
+    _rl_motor.brake();
+    _fr_motor.brake();
+    _rr_motor.brake();
     printf("Robot shutting down. Motors stopped.\n");
 }
 
@@ -82,7 +85,7 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     _state.l_ticks = _l_ticks;
     _state.r_ticks = _r_ticks;
 
-    if (!new_command) {
+    if (!new_command && l_count < 1 && r_count < 1) {
         l_count++;
         r_count++;
 
@@ -113,7 +116,7 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     _odom.v = (l_avg + r_avg) / 2.0f;
     _odom.w = (r_avg - l_avg) / ROBOT_WHEEL_SEPARATION;
 
-    constexpr float SPEED_ZERO_THRESHOLD = 0.07f;
+    constexpr float SPEED_ZERO_THRESHOLD = 0.1f;
     constexpr int DEAD_STOP_CYCLES = 10;
 
     bool left_stopped = fabs(_state.l_speed) < SPEED_ZERO_THRESHOLD;
@@ -167,11 +170,11 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     // if the robot will move from deadstop
     if (confirmed_dead_stop && (_l_setpoint != 0 || _r_setpoint != 0)) {
         if ((left_reverse && !right_reverse) || (!left_reverse && right_reverse)) {
-            l_pwm = left_reverse ? std::min(-l_pwm, -0.7f) : std::max(l_pwm, 0.7f);
-            r_pwm = right_reverse ? std::min(-r_pwm, -0.7f) : std::max(r_pwm, 0.7f);
+            l_pwm = left_reverse ? std::min(-l_pwm, -0.5f) : std::max(l_pwm, 0.5f);
+            r_pwm = right_reverse ? std::min(-r_pwm, -0.5f) : std::max(r_pwm, 0.5f);
         } else if (!left_reverse && !right_reverse) {
-            l_pwm = std::max(l_pwm, 0.4f);
-            r_pwm = std::max(r_pwm, 0.4f);
+            l_pwm = std::max(l_pwm, 0.3f);
+            r_pwm = std::max(r_pwm, 0.3f);
         }
     }
 
@@ -243,8 +246,15 @@ void Robot::setUnicycle(float v, float w)
     float v_l = (2 * v - w * ROBOT_WHEEL_SEPARATION) / 2;
     float v_r = (2 * v + w * ROBOT_WHEEL_SEPARATION) / 2;
 
+    if ((w != 0 && fabs(_angular - w) <= 0.1) || (v != 0 && fabs(_linear - v) <= 0.1)) {
+        new_command = false;
+    } else {
+        new_command = true;
+    }
+
     _linear = v;
     _angular = w;
+
     setWheels(v_l, v_r);
 }
 

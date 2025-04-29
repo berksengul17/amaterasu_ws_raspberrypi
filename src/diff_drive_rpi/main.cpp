@@ -15,7 +15,7 @@
 #include <array>
 
 #define MOTOR_PPR 39.0f
-#define SAMPLE_TIME_MS 10
+#define SAMPLE_TIME_MS 30
 #define PWM_FREQUENCY 800
 
 class RobotNode : public rclcpp::Node {
@@ -23,9 +23,9 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
-        kp1_(declare_parameter("kp", 0.1f)),
-        ki1_(declare_parameter("ki", 0.005f)),
-        kd1_(declare_parameter("kd", 0.001875f)),
+        kp1_(declare_parameter("kp", 0.05f)),
+        ki1_(declare_parameter("ki", 0.0)),
+        kd1_(declare_parameter("kd", 0.0f)),
         robot_pins_{{PWM_FREQUENCY, L_EN_PIN, FL_IN1_PIN, FL_IN2_PIN},
                     {PWM_FREQUENCY, R_EN_PIN, FR_IN1_PIN, FR_IN2_PIN},
                     {PWM_FREQUENCY, L_EN_PIN, RL_IN1_PIN, RL_IN2_PIN},
@@ -206,7 +206,7 @@ private:
         // Pose
         odom_msg.pose.pose.position.x = odometry.x_pos;
         odom_msg.pose.pose.position.y = odometry.y_pos;
-        odom_msg.pose.pose.position.z = 0.0325; // Same fixed height
+        odom_msg.pose.pose.position.z = 0.0; // Same fixed height
         odom_msg.pose.pose.orientation = robot_orientation;
 
         // Twist
