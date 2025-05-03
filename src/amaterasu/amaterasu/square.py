@@ -49,14 +49,16 @@ class MoveSquare(Node):
         self.theta_desired = 0
 
         self.r_tolerance = 0.1 # meters
-        self.theta_tolerance = 0.05 # radians ~ 5 degrees
+        self.theta_tolerance = 0.1 # radians ~ 5 degrees
 
-        self.sample_time = 0.03 # s
+        self.sample_time = 0.01 # s
 
         # PID parameters for turning
-        self.kp_turn = 0.63
+        self.kp_turn = 1.0
         self.ki_turn = 0.01
         self.kd_turn = 0.5
+
+        self.kp_v = 1.0
 
         self.prev_yaw_error = 0.0
         self.yaw_error_sum = 0.0
@@ -95,14 +97,14 @@ class MoveSquare(Node):
         yaw_error_derivative = (yaw_error - self.prev_yaw_error) / self.sample_time
 
         # PID formula
-        angular_z = (
-            self.kp_turn * yaw_error
-        )
+        angular_z = self.kp_turn * yaw_error
 
-        # if (angular_z > 0 and angular_z < 1.5): angular_z = 1.5
-        # elif (angular_z < 0 and angular_z > -1.5): angular_z = -1.5
+        if (abs(angular_z) < 0.1): angular_z = 0.0
 
         return angular_z
+    
+    def calculate_v(self, distance):
+        return (distance * self.kp_v)
 
     def stop(self):
         twist = Twist()
@@ -153,7 +155,25 @@ class MoveSquare(Node):
             (start_x, start_y + size),         # move left
             (start_x, start_y),                # move down (back to start)
         ]
+    
+    def is_goal_reached(self, direction, tolerance):
+        if direction == 'x' and abs(self.current_x - self.goal_x) < tolerance:
+            self.get_logger().warn("Stopping")
+            return True
         
+        elif direction == 'y' and abs(self.current_y - self.goal_y) < tolerance:
+            self.get_logger().warn("Stopping")
+            return True
+            
+        elif direction == 'xy' and (
+                abs(self.current_x - self.goal_x) < tolerance and 
+                abs(self.current_y - self.goal_y) < tolerance):
+            # If moving diagonally, check both x and y tolerances
+            self.get_logger().warn("Stopping")
+            return True
+        
+        return False
+
     # Update goal coordinates
     def goal_callback(self, goal_request):
         self.goal_x = goal_request.x
@@ -173,97 +193,124 @@ class MoveSquare(Node):
     
     async def execute_callback(self, goal_handle):
         self.get_logger().info("Executing goal...")
+        self.goal_x = goal_handle.request.x
+        self.goal_y = goal_handle.request.y
         feedback = GoToGoal.Feedback()
 
-        # Add initial goal to square waypoints
-        square_waypoints = [(goal_handle.request.x, goal_handle.request.y)] + \
-                             self.generate_square_waypoints(goal_handle.request.x, goal_handle.request.y)
+        self.theta_desired = self.calculate_theta_desired()
+        self.r_desired = self.calculate_distance_to_goal()
 
-        for idx, (gx, gy) in enumerate(square_waypoints):
-            self.goal_x, self.goal_y = gx, gy
-            direction, tolerance = self.calculate_primary_direction_tolerance()
+        self.get_logger().info(f"Moving to waypoint: ({self.goal_x}, {self.goal_y})")
+        self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
 
-            self.get_logger().info(f"Moving to waypoint {idx+1}: ({gx}, {gy})")
-            self.get_logger().info(f"Direction: {direction} | Tolerance: {tolerance}")
+        # Calculate the direction and tolerance for the current goal
+        direction, tolerance = self.calculate_primary_direction_tolerance()
 
-            if (self.calculate_distance_to_goal() < self.r_tolerance):
-                continue
+        while rclpy.ok():
+            self.theta_desired = self.calculate_theta_desired()
+            self.r_desired = self.calculate_distance_to_goal()
 
-            # Turn to desired orientation first
-            while rclpy.ok():
-                self.theta_desired = self.calculate_theta_desired()
+            # Stop condition
+            if (self.is_goal_reached(direction, tolerance)):
+                i = 0
+                while (i < 10):
+                    self.stop()
+                    self.execute_rate.sleep()
+                    i += 1
+                break
+                
+            angular_z = self.calculate_w(self.theta_desired)
 
-                # Turn until orientation is correct
-                if abs(self.theta_desired) <= self.theta_tolerance:
-                    i = 0
-                    while (i<10):
-                        self.stop()
-                        self.execute_rate.sleep()
-                        i += 1
-
-                    break
-
+            if (abs(self.theta_desired) > self.theta_tolerance):
                 linear_x = 0.0
-                angular_z = self.calculate_w(self.theta_desired)
+            else:
+                linear_x = 0.4
 
-                twist = Twist()
-                twist.linear.x = float(linear_x)
-                twist.angular.z = float(angular_z)
-                self.cmd_vel_pub.publish(twist)
+            twist = Twist()
+            twist.linear.x = float(linear_x)
+            twist.angular.z = float(angular_z)
+            self.cmd_vel_pub.publish(twist)
 
-                feedback.current_x = float(self.current_x)
-                feedback.current_y = float(self.current_y)
-                feedback.distance = float(self.r_desired)
-                goal_handle.publish_feedback(feedback)
+            feedback.current_x = float(self.current_x)
+            feedback.current_y = float(self.current_y)
+            feedback.distance = float(self.r_desired)
+            goal_handle.publish_feedback(feedback)
 
-                self.execute_rate.sleep()
+            self.execute_rate.sleep()
 
-            # Now move forward to the goal
-            while rclpy.ok():
-                self.r_desired = self.calculate_distance_to_goal()
-                self.theta_desired = self.calculate_theta_desired()
+        # # Turn to desired orientation first
+        # while rclpy.ok():
+        #     self.theta_desired = self.calculate_theta_desired()
 
-                # Stop condition
-                if direction == 'x':
-                    if abs(self.current_x - self.goal_x) < tolerance:
-                        self.stop()
-                        break
-                elif direction == 'y':
-                    if abs(self.current_y - self.goal_y) < tolerance:
-                        self.stop()
-                        break
-                elif direction == 'xy':
-                    # If moving diagonally, check both x and y tolerances
-                    if (abs(self.current_x - self.goal_x) < tolerance and
-                        abs(self.current_y - self.goal_y) < tolerance):
-                        self.stop()
-                        break
+        #     # Turn until orientation is correct
+        #     if abs(self.theta_desired) <= self.theta_tolerance:
+        #         i = 0
+        #         while (i < 10):
+        #             self.stop()
+        #             self.execute_rate.sleep()
+        #             i += 1
+        #         break
 
-                # Move forward
-                linear_x = 0.3
-                angular_z = 0.0
+        #     linear_x = 0.0
+        #     angular_z = self.calculate_w(self.theta_desired)
 
-                twist = Twist()
-                twist.linear.x = float(linear_x)
-                twist.angular.z = float(angular_z)
-                self.cmd_vel_pub.publish(twist)
+        #     twist = Twist()
+        #     twist.linear.x = float(linear_x)
+        #     twist.angular.z = float(angular_z)
+        #     self.cmd_vel_pub.publish(twist)
 
-                feedback.current_x = float(self.current_x)
-                feedback.current_y = float(self.current_y)
-                feedback.distance = float(self.r_desired)
-                goal_handle.publish_feedback(feedback)
+        #     feedback.current_x = float(self.current_x)
+        #     feedback.current_y = float(self.current_y)
+        #     feedback.distance = float(self.r_desired)
+        #     goal_handle.publish_feedback(feedback)
 
-                self.execute_rate.sleep()
+        #     self.execute_rate.sleep()
 
-            self.get_logger().info(f"Reached waypoint {idx+1} | Current position: ({self.current_x}, {self.current_y})")
+        # # Now move forward to the current goal
+        # while rclpy.ok():
+        #     self.r_desired = self.calculate_distance_to_goal()
+        #     self.theta_desired = self.calculate_theta_desired()
 
-        self.stop()  # Stop the robot after reaching all waypoints
+        #     # Stop condition
+        #     if direction == 'x' and abs(self.current_x - self.goal_x) < tolerance:
+        #         self.stop()
+        #         break
+        #     elif direction == 'y' and abs(self.current_y - self.goal_y) < tolerance:
+        #         self.stop()
+        #         break
+        #     elif direction == 'xy' and (
+        #             abs(self.current_x - self.goal_x) < tolerance and 
+        #             abs(self.current_y - self.goal_y) < tolerance):
+        #         # If moving diagonally, check both x and y tolerances
+        #         self.stop()
+        #         break
+
+        #     # Move forward
+        #     linear_x = 0.5
+        #     angular_z = 0.0
+
+        #     twist = Twist()
+        #     twist.linear.x = float(linear_x)
+        #     twist.angular.z = float(angular_z)
+        #     self.cmd_vel_pub.publish(twist)
+
+        #     feedback.current_x = float(self.current_x)
+        #     feedback.current_y = float(self.current_y)
+        #     feedback.distance = float(self.r_desired)
+        #     goal_handle.publish_feedback(feedback)
+
+        #     self.execute_rate.sleep()
+
+        self.stop()  # Stop the robot after completing all waypoints
 
         # Finish goal
         result = GoToGoal.Result()
         result.goal_reached = True
         goal_handle.succeed()
+        self.get_logger().warn(f'Goal reached')
+        self.get_logger().info(f'---------------------------------------------------------')
         return result
+
 
 def main(args=None):
     rclpy.init(args=args)

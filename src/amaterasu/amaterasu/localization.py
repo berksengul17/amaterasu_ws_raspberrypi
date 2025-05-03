@@ -21,7 +21,7 @@ class AprilTagLocalizationNode(Node):
 
         self.T_A_to_robot_start = None  # Initial camera-to-robot transform (position only)
 
-        self.timer = self.create_timer(0.03, self.lookup_transform)
+        self.timer = self.create_timer(0.01, self.lookup_transform)
 
     def lookup_transform(self):
         try:
@@ -51,15 +51,21 @@ class AprilTagLocalizationNode(Node):
             trans_rel = T_B_to_robot_new[:3, 3]
             rot_rel = quaternion_from_matrix(T_B_to_robot_new)
 
-            roll, pitch, yaw = euler_from_quaternion(rot_rel)
+            _, _, yaw = euler_from_quaternion(rot_rel)
             yaw_deg = np.degrees(yaw)
 
+            robot_length = 0.15 # meters
+            robot_width = 0.13
+
+            trans_rel[0] = trans_rel[0] + (np.cos(yaw) * robot_length / 2) + (np.sin(yaw) * robot_width / 2)
+            trans_rel[1] = trans_rel[1] + (np.sin(yaw) * robot_length / 2) + (np.cos(yaw) * robot_width / 2)
+            
             self.get_logger().info(f"x: {trans_rel[0]}, y: {trans_rel[1]}, z: {trans_rel[2]}, yaw: {yaw_deg}")
 
             # Publish Odometry in frame B
             relative_odom = Odometry()
             relative_odom.header.stamp = self.get_clock().now().to_msg()
-            relative_odom.header.frame_id = 'start_position'
+            relative_odom.header.frame_id = 'tag36h11_0'
 
             relative_odom.pose.pose.position.x = trans_rel[0]
             relative_odom.pose.pose.position.y = trans_rel[1]
