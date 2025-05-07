@@ -36,7 +36,7 @@ class MoveSquare(Node):
             execute_callback=self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
             goal_callback=self.goal_callback,
-            cancel_callback=self.cancel_callback
+            cancel_callback=self.cancel_callback,
         )
 
         self.goal_x = 0
@@ -158,18 +158,18 @@ class MoveSquare(Node):
     
     def is_goal_reached(self, direction, tolerance):
         if direction == 'x' and abs(self.current_x - self.goal_x) < tolerance:
-            self.get_logger().warn("Stopping")
+            self.get_logger().warn("Stopping X!")
             return True
         
         elif direction == 'y' and abs(self.current_y - self.goal_y) < tolerance:
-            self.get_logger().warn("Stopping")
+            self.get_logger().warn("Stopping Y")
             return True
             
         elif direction == 'xy' and (
                 abs(self.current_x - self.goal_x) < tolerance and 
                 abs(self.current_y - self.goal_y) < tolerance):
             # If moving diagonally, check both x and y tolerances
-            self.get_logger().warn("Stopping")
+            self.get_logger().warn("Stopping XY")
             return True
         
         return False
@@ -188,11 +188,17 @@ class MoveSquare(Node):
 
     def cancel_callback(self, goal_handle):
         self.get_logger().info('Received cancel request')
-        self.stop()
+        i = 0
+        while (i < 10):
+            self.stop()
+            self.execute_rate.sleep()   
+            i += 1
+            break
         return CancelResponse.ACCEPT
     
     async def execute_callback(self, goal_handle):
         self.get_logger().info("Executing goal...")
+
         self.goal_x = goal_handle.request.x
         self.goal_y = goal_handle.request.y
         feedback = GoToGoal.Feedback()
@@ -207,11 +213,17 @@ class MoveSquare(Node):
         direction, tolerance = self.calculate_primary_direction_tolerance()
 
         while rclpy.ok():
+            if goal_handle.is_cancel_requested:
+                self.get_logger().warn("Goal was canceled")
+                self.stop()
+                goal_handle.canceled()
+                return GoToGoal.Result(goal_reached=False)
+    
             self.theta_desired = self.calculate_theta_desired()
             self.r_desired = self.calculate_distance_to_goal()
 
             # Stop condition
-            if (self.is_goal_reached(direction, tolerance)):
+            if (self.r_desired < self.r_tolerance):
                 i = 0
                 while (i < 10):
                     self.stop()
@@ -237,69 +249,6 @@ class MoveSquare(Node):
             goal_handle.publish_feedback(feedback)
 
             self.execute_rate.sleep()
-
-        # # Turn to desired orientation first
-        # while rclpy.ok():
-        #     self.theta_desired = self.calculate_theta_desired()
-
-        #     # Turn until orientation is correct
-        #     if abs(self.theta_desired) <= self.theta_tolerance:
-        #         i = 0
-        #         while (i < 10):
-        #             self.stop()
-        #             self.execute_rate.sleep()
-        #             i += 1
-        #         break
-
-        #     linear_x = 0.0
-        #     angular_z = self.calculate_w(self.theta_desired)
-
-        #     twist = Twist()
-        #     twist.linear.x = float(linear_x)
-        #     twist.angular.z = float(angular_z)
-        #     self.cmd_vel_pub.publish(twist)
-
-        #     feedback.current_x = float(self.current_x)
-        #     feedback.current_y = float(self.current_y)
-        #     feedback.distance = float(self.r_desired)
-        #     goal_handle.publish_feedback(feedback)
-
-        #     self.execute_rate.sleep()
-
-        # # Now move forward to the current goal
-        # while rclpy.ok():
-        #     self.r_desired = self.calculate_distance_to_goal()
-        #     self.theta_desired = self.calculate_theta_desired()
-
-        #     # Stop condition
-        #     if direction == 'x' and abs(self.current_x - self.goal_x) < tolerance:
-        #         self.stop()
-        #         break
-        #     elif direction == 'y' and abs(self.current_y - self.goal_y) < tolerance:
-        #         self.stop()
-        #         break
-        #     elif direction == 'xy' and (
-        #             abs(self.current_x - self.goal_x) < tolerance and 
-        #             abs(self.current_y - self.goal_y) < tolerance):
-        #         # If moving diagonally, check both x and y tolerances
-        #         self.stop()
-        #         break
-
-        #     # Move forward
-        #     linear_x = 0.5
-        #     angular_z = 0.0
-
-        #     twist = Twist()
-        #     twist.linear.x = float(linear_x)
-        #     twist.angular.z = float(angular_z)
-        #     self.cmd_vel_pub.publish(twist)
-
-        #     feedback.current_x = float(self.current_x)
-        #     feedback.current_y = float(self.current_y)
-        #     feedback.distance = float(self.r_desired)
-        #     goal_handle.publish_feedback(feedback)
-
-        #     self.execute_rate.sleep()
 
         self.stop()  # Stop the robot after completing all waypoints
 

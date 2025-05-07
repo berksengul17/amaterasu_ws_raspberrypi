@@ -10,27 +10,36 @@ class MoveSquareClient(Node):
 
         # Create the action client
         self._client = ActionClient(self, GoToGoal, 'move_square_service')
-        # self.create_subscription(Float32MultiArray, "/fire_cell_goal", self.fire_callback, 10)
+        self.create_subscription(Float32MultiArray, "/fire_cell_goal", self.fire_callback, 10)
         
         self.executing_goal = False
         self.current_goal_index = 0  # Track the index of the current goal
         self.goals = []
+        self.current_goal_handle = None  # To store the current goal handle
 
     def fire_callback(self, msg):
         if len(msg.data) >= 2:
             goal = (msg.data[0], msg.data[1])
-            self.goals.append(goal)
-            self.get_logger().info(
-                f"Queued goal: x={goal[0]:.2f}, y={goal[1]:.2f}"
-            )
-            self.send_goals(self.goals)
+            if goal not in self.goals:
+                self.goals.append(goal)
+                self.get_logger().info(
+                    f"Queued goal: x={goal[0]:.2f}, y={goal[1]:.2f}"
+                )
+                self.send_goals(self.goals)
 
     def send_goals(self, goals):
-        self.goals = goals
         # Wait for the action server to be ready
         self.get_logger().info('Waiting for action server...')
         self._client.wait_for_server()
 
+        if self.executing_goal and self.current_goal_handle:
+            self.get_logger().info("Cancelling current goal...")
+            self._client._cancel_goal_async(self.current_goal_handle)  # Cancel using goal handle
+            self.executing_goal = False
+
+        self.execute_goal(goals)
+
+    def execute_goal(self, goals):
         # Send the goal if there are still goals to send
         if self.current_goal_index < len(goals) and not self.executing_goal:
             self.executing_goal = True
@@ -66,6 +75,7 @@ class MoveSquareClient(Node):
             return
 
         self.get_logger().info('Goal accepted.')
+        self.current_goal_handle = goal_handle  # Save the goal handle
         self._get_result_future = goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
 
@@ -80,26 +90,14 @@ class MoveSquareClient(Node):
             self.executing_goal = False
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=args)  # Initialize ROS2
 
-    move_square_client = MoveSquareClient()
+    move_square_client = MoveSquareClient()  # Create an instance of the MoveSquareClient
 
-    # Example list of goals (x, y) coordinates for a square path
-    goals = [
-        (0.8, 0.8),
-        (0.8, 0.0),
-        (0.0, 0.8),
-        (0.0, 0.0)
-    ]
-
-    # Send the goals
-    move_square_client.send_goals(goals)
-
-    # Spin the client to keep it active
+    # Spin the node to keep it alive and process callbacks
     rclpy.spin(move_square_client)
 
-    # Clean up
-    move_square_client.destroy_node()
+    # Shutdown the ROS2 client when done
     rclpy.shutdown()
 
 if __name__ == '__main__':
