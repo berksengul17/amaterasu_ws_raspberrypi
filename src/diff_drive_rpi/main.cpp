@@ -43,6 +43,9 @@ public:
         cmd_vel_subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "cmd_vel", 10,
             std::bind(&RobotNode::cmdVelCallback, this, std::placeholders::_1));
+        sim_cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(
+            "/diff_drive/cmd_vel", 10
+        );
         robot_pos_subscription_ = this->create_subscription<geometry_msgs::msg::Vector3>(
             "/robot/bounding_box", 10,
             std::bind(&RobotNode::robotCallback, this, std::placeholders::_1));
@@ -216,12 +219,19 @@ private:
         // printState(robot_.getState(), odometry);
 
         odom_publisher_->publish(odom_msg);
+
+        geometry_msgs::msg::Twist twist_msg;
+        twist_msg.linear.x = odometry.v;
+        twist_msg.angular.z = odometry.w;
+
+        sim_cmd_vel_pub->publish(twist_msg);
         // }
     }
 
     // ROS 2 Publishers and Subscribers
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr sim_cmd_vel_pub;
     rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr robot_pos_subscription_;
     rclcpp::TimerBase::SharedPtr timer_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
