@@ -28,7 +28,8 @@ setup(
             'imu_pub = amaterasu.imu_pub:main',
             'square = amaterasu.square:main',
             'turn_90 = amaterasu.turn_90:main',
-            'localization = amaterasu.localization:main'
+            'localization = amaterasu.localization:main',
+            'square_client = amaterasu.square_client:main'
         ],
     },
 )

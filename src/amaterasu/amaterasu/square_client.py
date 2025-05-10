@@ -1,103 +1,105 @@
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from amaterasu_interfaces.action import GoToGoal
 from std_msgs.msg import Float32MultiArray
 
-class MoveSquareClient(Node):
+class MultiRobotClient(Node):
     def __init__(self):
-        super().__init__('move_square_client')
+        super().__init__('multi_robot_client')
 
-        # Create the action client
-        self._client = ActionClient(self, GoToGoal, 'move_square_service')
-        self.create_subscription(Float32MultiArray, "/fire_cell_goal", self.fire_callback, 10)
-        
-        self.executing_goal = False
-        self.current_goal_index = 0  # Track the index of the current goal
-        self.goals = []
-        self.current_goal_handle = None  # To store the current goal handle
+        # 1) declare & read the list of robot namespaces
+        self.declare_parameter('robot_list', ['robot1', 'robot2'])
+        self.robot_list = self.get_parameter('robot_list') \
+                              .get_parameter_value() \
+                              .string_array_value
 
-    def fire_callback(self, msg):
+        # 2) one ActionClient per robot
+        self.action_clients = {
+            ns: ActionClient(self, GoToGoal, f"/{ns}/move_square_service")
+            for ns in self.robot_list
+        }
+        # track busy/free state
+        self.robot_busy = {ns: False for ns in self.robot_list}
+
+        # queue of (x,y) goals
+        self.goal_queue = []
+
+        # subscribe to the global goal source
+        self.create_subscription(
+            Float32MultiArray,
+            '/fire_cell_goal',
+            self.fire_callback,
+            10)
+
+    def fire_callback(self, msg: Float32MultiArray):
         if len(msg.data) >= 2:
             goal = (msg.data[0], msg.data[1])
-            if goal not in self.goals:
-                self.goals.append(goal)
-                self.get_logger().info(
-                    f"Queued goal: x={goal[0]:.2f}, y={goal[1]:.2f}"
-                )
-                self.send_goals(self.goals)
+            if goal not in self.goal_queue:
+                self.goal_queue.append(goal)
+                self.get_logger().info(f"Queued goal: {goal}")
+                self.dispatch_goals()
 
-    def send_goals(self, goals):
-        # Wait for the action server to be ready
-        self.get_logger().info('Waiting for action server...')
-        self._client.wait_for_server()
+    def dispatch_goals(self):
+        # as long as we have free robots and queued goals, assign them
+        free_robots = [ns for ns, busy in self.robot_busy.items() if not busy]
+        while free_robots and self.goal_queue:
+            ns = free_robots.pop(0)
+            x, y = self.goal_queue.pop(0)
+            self.send_goal(ns, x, y)
 
-        if self.executing_goal and self.current_goal_handle:
-            self.get_logger().info("Cancelling current goal...")
-            self._client._cancel_goal_async(self.current_goal_handle)  # Cancel using goal handle
-            self.executing_goal = False
+    def send_goal(self, ns: str, x: float, y: float):
+        self.get_logger().info(f"→ Sending to {ns}: ({x:.2f},{y:.2f})")
+        self.robot_busy[ns] = True
 
-        self.execute_goal(goals)
+        client = self.action_clients[ns]
+        client.wait_for_server()
 
-    def execute_goal(self, goals):
-        # Send the goal if there are still goals to send
-        if self.current_goal_index < len(goals) and not self.executing_goal:
-            self.executing_goal = True
-            self.send_next_goal(goals)
+        goal_msg = GoToGoal.Goal(x=float(x), y=float(y))
+        send_goal_future = client.send_goal_async(
+            goal_msg,
+            feedback_callback=lambda fb, ns=ns: self.feedback_cb(ns, fb)
+        )
+        send_goal_future.add_done_callback(
+            lambda fut, ns=ns: self.handle_response(ns, fut)
+        )
 
-    def send_next_goal(self, goals):
-        if self.current_goal_index < len(goals):
-            x = goals[self.current_goal_index][0]
-            y = goals[self.current_goal_index][1]
+    def feedback_cb(self, ns: str, feedback_msg):
+        fb = feedback_msg.feedback
+        self.get_logger().info(
+            f"[{ns}] Feedback: x={fb.current_x:.2f}, "
+            f"y={fb.current_y:.2f}, d={fb.distance:.2f}"
+        )
 
-            goal_msg = GoToGoal.Goal()
-            goal_msg.x = float(x)
-            goal_msg.y = float(y)
-
-            # Send the goal asynchronously and wait for feedback
-            self.get_logger().info(f'Sending goal {self.current_goal_index + 1}: ({x}, {y})')
-            self.current_goal_index += 1
-
-            goal_future = self._client.send_goal_async(goal_msg, feedback_callback=self.feedback_callback)
-            goal_future.add_done_callback(self.goal_response_callback)
-
-    def feedback_callback(self, feedback_msg):
-        # Print the feedback received from the server
-        feedback = feedback_msg.feedback
-        self.get_logger().info(f'Feedback: current_x={feedback.current_x}, current_y={feedback.current_y}, distance={feedback.distance}')
-
-    def goal_response_callback(self, future):
-        goal_handle = future.result()
-
+    def handle_response(self, ns: str, goal_future):
+        goal_handle = goal_future.result()
         if not goal_handle.accepted:
-            self.get_logger().info('Goal rejected.')
-            self.executing_goal = False
+            self.get_logger().warn(f"[{ns}] Goal rejected")
+            self.robot_busy[ns] = False
+            self.dispatch_goals()
             return
 
-        self.get_logger().info('Goal accepted.')
-        self.current_goal_handle = goal_handle  # Save the goal handle
-        self._get_result_future = goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self.get_result_callback)
+        self.get_logger().info(f"[{ns}] Goal accepted")
+        get_result_future = goal_handle.get_result_async()
+        get_result_future.add_done_callback(
+            lambda fut, ns=ns: self.handle_result(ns, fut)
+        )
 
-    def get_result_callback(self, future):
-        result = future.result().result
-        self.get_logger().info(f'Result: {result.goal_reached}')
-        if result.goal_reached:
-            # Trigger the next goal
-            self.executing_goal = False
-            self.send_goals(self.goals)  # Send the next goal if there are more
-        else:
-            self.executing_goal = False
+    def handle_result(self, ns: str, result_future):
+        result = result_future.result().result
+        self.get_logger().info(
+            f"[{ns}] Result: goal_reached={result.goal_reached}"
+        )
+        # mark robot free and dispatch any remaining goals
+        self.robot_busy[ns] = False
+        self.dispatch_goals()
 
 def main(args=None):
-    rclpy.init(args=args)  # Initialize ROS2
-
-    move_square_client = MoveSquareClient()  # Create an instance of the MoveSquareClient
-
-    # Spin the node to keep it alive and process callbacks
-    rclpy.spin(move_square_client)
-
-    # Shutdown the ROS2 client when done
+    rclpy.init(args=args)
+    node = MultiRobotClient()
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
 
 if __name__ == '__main__':

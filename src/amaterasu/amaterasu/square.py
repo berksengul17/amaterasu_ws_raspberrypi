@@ -17,7 +17,12 @@ from sensor_msgs.msg import Imu
 
 class MoveSquare(Node):
     def __init__(self):
-        super().__init__("move_square")
+        super().__init__('move_square')
+
+        # 1) declare & read the robot namespace param
+        self.declare_parameter('robot_ns', '')  # e.g. "robot1"
+        ns = self.get_parameter('robot_ns').get_parameter_value().string_value
+        prefix = f"/{ns}" if ns else ""
 
         self.x = 0.0
         self.y = 0.0
@@ -26,18 +31,24 @@ class MoveSquare(Node):
         self.start_x = None
         self.start_y = None       
 
-        self.odom_sub = self.create_subscription(Odometry, "/localization", self.odom_callback, 10)
-        self.cmd_vel_pub = self.create_publisher(Twist, "/cmd_vel", 10)
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            f"{prefix}/localization",
+            self.odom_callback,
+            10)
+        self.cmd_vel_pub = self.create_publisher(
+            Twist,
+            f"{prefix}/cmd_vel",
+            10)
 
         self.draw_square_action_service = ActionServer(
-            self,
-            GoToGoal,
-            "move_square_service",
+            self, 
+            GoToGoal, 
+            f"/{ns}/move_square_service",
             execute_callback=self.execute_callback,
-            callback_group=ReentrantCallbackGroup(),
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
-        )
+            callback_group=ReentrantCallbackGroup())
 
         self.goal_x = 0
         self.goal_y = 0
