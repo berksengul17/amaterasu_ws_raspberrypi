@@ -31,8 +31,8 @@ class AprilTagLocalizationNode(Node):
         # ─── 2) PUBLISHERS ─────────────────────────────────────────────
         self.odom_pub     = self.create_publisher(
             Odometry, f"{prefix}/localization", 10)
-        self.sim_pose_pub = self.create_publisher(
-            Pose,      f"{prefix}/model/diff_drive/pose", 10)
+        self.sim_odom_pub     = self.create_publisher(
+            Odometry, f"{prefix}/sim_localization", 10)
 
         # ─── 3) TF SETUP ────────────────────────────────────────────────
         self.tf_buffer   = Buffer()
@@ -113,11 +113,10 @@ class AprilTagLocalizationNode(Node):
             odom.pose.pose.orientation.w = float(rot[3])
             self.odom_pub.publish(odom)
 
-            # 5) PUBLISH SIMPLE POSE
-            pose = Pose()
-            pose.position    = odom.pose.pose.position
-            pose.orientation = odom.pose.pose.orientation
-            self.sim_pose_pub.publish(pose)
+            odom.pose.pose.position.x = float(pos[0] * 10)
+            odom.pose.pose.position.y = float(pos[1] * 10)
+            odom.pose.pose.position.z = 0.005
+            self.sim_odom_pub.publish(odom)
 
             self.get_logger().info(
                 f"[{self.tag_frame}] → x:{pos[0]:.3f} y:{pos[1]:.3f} yaw:{np.degrees(yaw):.1f}°"

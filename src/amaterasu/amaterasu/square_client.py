@@ -17,7 +17,7 @@ class MultiRobotClient(Node):
 
         # 2) one ActionClient per robot
         self.action_clients = {
-            ns: ActionClient(self, GoToGoal, f"/{ns}/move_square_service")
+            ns: ActionClient(self, GoToGoal, f"/{ns}/navigate_to_goal_service")
             for ns in self.robot_list
         }
         # track busy/free state

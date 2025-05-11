@@ -1,6 +1,6 @@
+import heapq
 import numpy as np
 import math
-import time
 
 import rclpy
 from rclpy.node import Node
@@ -11,25 +11,20 @@ from amaterasu_interfaces.action import GoToGoal
 
 from tf_transformations import euler_from_quaternion
 
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Imu
 
-class MoveSquare(Node):
+class NavigateToGoal(Node):
     def __init__(self):
-        super().__init__('move_square')
+        super().__init__('navigate_to_goal')
 
         # 1) declare & read the robot namespace param
         self.declare_parameter('robot_ns', '')  # e.g. "robot1"
         ns = self.get_parameter('robot_ns').get_parameter_value().string_value
         prefix = f"/{ns}" if ns else ""
 
-        self.x = 0.0
-        self.y = 0.0
-        self.yaw = 0.0
-
-        self.start_x = None
-        self.start_y = None       
+        self.map_sub = self.create_subscription(OccupancyGrid, "/map", self.map_callback, 10)
 
         self.odom_sub = self.create_subscription(
             Odometry,
@@ -44,11 +39,20 @@ class MoveSquare(Node):
         self.draw_square_action_service = ActionServer(
             self, 
             GoToGoal, 
-            f"/{ns}/move_square_service",
+            f"/{ns}/navigate_to_goal_service",
             execute_callback=self.execute_callback,
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
             callback_group=ReentrantCallbackGroup())
+
+        self.map = None
+
+        self.x = 0.0
+        self.y = 0.0
+        self.yaw = 0.0
+
+        self.start_x = None
+        self.start_y = None   
 
         self.goal_x = 0
         self.goal_y = 0
@@ -82,6 +86,9 @@ class MoveSquare(Node):
         self.turn_speed = 1.0 # radians/s
 
         self.execute_rate = self.create_rate(1/self.sample_time)
+
+    def map_callback(self, msg: OccupancyGrid):
+        self.map = msg
 
     # update position
     def odom_callback(self, msg: Odometry):
@@ -139,51 +146,79 @@ class MoveSquare(Node):
         diff_y = self.current_y - self.goal_y
         return math.sqrt((diff_x * diff_x) + (diff_y * diff_y))
         
-    def calculate_primary_direction_tolerance(self):
-        # Calculate the differences in x and y directions
-        diff_x = abs(self.goal_x - self.current_x)
-        diff_y = abs(self.goal_y - self.current_y)
+    def plan_path(self, start, goal):
+        # wait for a map
+        while rclpy.ok() and not self.map:
+            self.get_logger().warn("Waiting for map…")
+            self.execute_rate.sleep()
 
-        # Define the base tolerance values
-        tolerance = 0.04
+        info = self.map.info
+        ox, oy = info.origin.position.x, info.origin.position.y
+        res = info.resolution
+        w, h  = info.width, info.height
+        data  = self.map.data
 
-        # If the goal is primarily along the x axis, apply tolerance in x
-        if diff_x > diff_y:
-            # Only check tolerance for x direction
-            return 'x', tolerance
-        # If the goal is primarily along the y axis, apply tolerance in y
-        elif diff_y > diff_x:
-            # Only check tolerance for y direction
-            return 'y', tolerance
-        # If the goal is diagonal, apply the same tolerance for both axes
-        else:
-            return 'xy', tolerance
-    
-    def generate_square_waypoints(self, start_x, start_y, size=0.8):
-        return [
-            (start_x + size, start_y),         # move right
-            (start_x + size, start_y + size),  # move up
-            (start_x, start_y + size),         # move left
-            (start_x, start_y),                # move down (back to start)
-        ]
-    
-    def is_goal_reached(self, direction, tolerance):
-        if direction == 'x' and abs(self.current_x - self.goal_x) < tolerance:
-            self.get_logger().warn("Stopping X!")
-            return True
+        def to_cell(wx, wy):
+            # world → map_index
+            i = int((ox - wx) / res)
+            j = int((wy - oy) / res)
+            return (i, j)
+
+        def to_world(i, j):
+            # map_index → world (center of cell) on a flipped (right-origin) grid
+            x = ox - (i + 0.5) * res
+            y = oy + (j + 0.5) * res
+            return (x, y)
         
-        elif direction == 'y' and abs(self.current_y - self.goal_y) < tolerance:
-            self.get_logger().warn("Stopping Y")
-            return True
-            
-        elif direction == 'xy' and (
-                abs(self.current_x - self.goal_x) < tolerance and 
-                abs(self.current_y - self.goal_y) < tolerance):
-            # If moving diagonally, check both x and y tolerances
-            self.get_logger().warn("Stopping XY")
-            return True
-        
-        return False
+        def free(cell):
+            i, j = cell
+            if not (0 <= i < w and 0 <= j < h):
+                return False
+            return data[j*w + i] < 50
+
+        start_c = to_cell(*start)
+        goal_c  = to_cell(*goal)
+
+        # --- debug block START ---
+        self.get_logger().info(f"MAP: width={w}, height={h}, data_len={len(data)}")
+        occ_idxs = [idx for idx, v in enumerate(data) if v >= 50]
+        self.get_logger().info(f"Obstacle indices (>=50): {occ_idxs[:5]}{'...' if len(occ_idxs)>5 else ''}")
+        self.get_logger().info(f"start {start} → cell {start_c}, free? {free(start_c)}")
+        self.get_logger().info(f"goal  {goal}  → cell {goal_c},  free? {free(goal_c)}")
+        # --- debug block END ---
+
+        open_set  = [(0, start_c)]
+        came_from = {}
+        g_score   = {start_c: 0}
+
+        while open_set and rclpy.ok():
+            cost, cur = heapq.heappop(open_set)
+            self.get_logger().info(f"Expanding cell {cur} (g={g_score[cur]:.1f})")
+
+            if cur == goal_c:
+                self.get_logger().info("Reached goal cell!")
+                path = []
+                while cur in came_from:
+                    path.append(to_world(*cur))
+                    cur = came_from[cur]
+                return list(reversed(path))
+
+            for di, dj in [(1,0),(-1,0),(0,1),(0,-1)]:
+                nb = (cur[0] + di, cur[1] + dj)
+                is_free = free(nb)
+                self.get_logger().info(f"  Neighbor {nb} → free? {is_free}")
+                if not is_free:
+                    continue
+
+                tentative = g_score[cur] + 1
+                if tentative < g_score.get(nb, float('inf')):
+                    came_from[nb] = cur
+                    g_score[nb] = tentative
+                    heuristic = math.hypot(goal_c[0] - nb[0], goal_c[1] - nb[1])
+                    heapq.heappush(open_set, (tentative + heuristic, nb))
+
+        self.get_logger().warn("A* exhausted all nodes without hitting goal")
+        return []
 
     # Update goal coordinates
     def goal_callback(self, goal_request):
@@ -210,60 +245,64 @@ class MoveSquare(Node):
     async def execute_callback(self, goal_handle):
         self.get_logger().info("Executing goal...")
 
-        self.goal_x = goal_handle.request.x
-        self.goal_y = goal_handle.request.y
+        start = (self.current_x, self.current_y)
+        goal  = (goal_handle.request.x, goal_handle.request.y)
+        waypoints = self.plan_path(start, goal)
+        self.get_logger().info(f"Waypoints: {waypoints}")
+
+        if not waypoints:
+            self.get_logger().error("No path found!")
+            goal_handle.abort()
+            return GoToGoal.Result(goal_reached=False)
+
         feedback = GoToGoal.Feedback()
 
-        self.theta_desired = self.calculate_theta_desired()
-        self.r_desired = self.calculate_distance_to_goal()
+        for idx, (gx, gy) in enumerate(waypoints):
+            self.goal_x = gx
+            self.goal_y = gy
 
-        self.get_logger().info(f"Moving to waypoint: ({self.goal_x}, {self.goal_y})")
-        self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
+            self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
+            self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
 
-        # Calculate the direction and tolerance for the current goal
-        direction, tolerance = self.calculate_primary_direction_tolerance()
-
-        while rclpy.ok():
-            if goal_handle.is_cancel_requested:
-                self.get_logger().warn("Goal was canceled")
-                self.stop()
-                goal_handle.canceled()
-                return GoToGoal.Result(goal_reached=False)
-    
-            self.theta_desired = self.calculate_theta_desired()
-            self.r_desired = self.calculate_distance_to_goal()
-
-            # Stop condition
-            if (self.r_desired < self.r_tolerance):
-                i = 0
-                while (i < 10):
+            while rclpy.ok():
+                if goal_handle.is_cancel_requested:
+                    self.get_logger().warn("Goal was canceled")
                     self.stop()
-                    self.execute_rate.sleep()
-                    i += 1
-                break
-                
-            angular_z = self.calculate_w(self.theta_desired)
+                    goal_handle.canceled()
+                    return GoToGoal.Result(goal_reached=False)
+        
+                self.theta_desired = self.calculate_theta_desired()
+                self.r_desired = self.calculate_distance_to_goal()
 
-            if (abs(self.theta_desired) > self.theta_tolerance):
-                linear_x = 0.0
-            else:
-                linear_x = 0.4
+                # Stop condition
+                if (self.r_desired < self.r_tolerance):
+                    break
+                    
+                angular_z = self.calculate_w(self.theta_desired)
 
-            twist = Twist()
-            twist.linear.x = float(linear_x)
-            twist.angular.z = float(angular_z)
-            self.cmd_vel_pub.publish(twist)
+                if (abs(self.theta_desired) > self.theta_tolerance):
+                    linear_x = 0.0
+                else:
+                    linear_x = 0.4
 
-            feedback.current_x = float(self.current_x)
-            feedback.current_y = float(self.current_y)
-            feedback.distance = float(self.r_desired)
-            goal_handle.publish_feedback(feedback)
+                twist = Twist()
+                twist.linear.x = float(linear_x)
+                twist.angular.z = float(angular_z)
+                self.cmd_vel_pub.publish(twist)
 
-            self.execute_rate.sleep()
+                feedback.current_x = float(self.current_x)
+                feedback.current_y = float(self.current_y)
+                feedback.distance = float(self.r_desired)
+                goal_handle.publish_feedback(feedback)
 
-        self.stop()  # Stop the robot after completing all waypoints
+                self.execute_rate.sleep()
 
         # Finish goal
+        i = 0
+        while (i < 10):
+            self.stop()
+            self.execute_rate.sleep()
+            i += 1
         result = GoToGoal.Result()
         result.goal_reached = True
         goal_handle.succeed()
@@ -275,12 +314,12 @@ class MoveSquare(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    move_square = MoveSquare()
+    navigate_to_goal = NavigateToGoal()
     executor = MultiThreadedExecutor()
 
-    rclpy.spin(move_square, executor=executor)
+    rclpy.spin(navigate_to_goal, executor=executor)
 
-    move_square.destroy_node()
+    navigate_to_goal.destroy_node()
     rclpy.shutdown()
 
 
