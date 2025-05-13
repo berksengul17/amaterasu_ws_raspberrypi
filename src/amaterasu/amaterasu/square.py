@@ -28,7 +28,7 @@ class NavigateToGoal(Node):
 
         self.odom_sub = self.create_subscription(
             Odometry,
-            f"{prefix}/localization",
+            f"/robot1/localization",
             self.odom_callback,
             10)
         self.cmd_vel_pub = self.create_publisher(
@@ -283,7 +283,7 @@ class NavigateToGoal(Node):
                 if (abs(self.theta_desired) > self.theta_tolerance):
                     linear_x = 0.0
                 else:
-                    linear_x = 0.4
+                    linear_x = 0.15
 
                 twist = Twist()
                 twist.linear.x = float(linear_x)
