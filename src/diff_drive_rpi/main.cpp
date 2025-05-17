@@ -23,6 +23,7 @@ public:
     RobotNode()
         : Node("robot_control_node"), linear_(0.0), angular_(0.0),
         startPose{0.0, 0.0}, initPose(false),
+        robot_ns_(declare_parameter<std::string>("robot_ns", "")),
         kp1_(declare_parameter("kp", 0.05f)),
         ki1_(declare_parameter("ki", 0.0)),
         kd1_(declare_parameter("kd", 0.0f)),
@@ -36,13 +37,19 @@ public:
     {
 
         // Publisher for odometry
-        odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
-        tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+        prefix_ = robot_ns_.empty() ? std::string("") : std::string("/") + robot_ns_;
 
-        // Subscription for cmd_vel
+        // namespaced odometry publisher:
+        odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(
+            prefix_ + "/odom", 10);
+      
+        // namespaced cmd_vel subscription:
         cmd_vel_subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
-            "/robot1/cmd_vel", 10,
-            std::bind(&RobotNode::cmdVelCallback, this, std::placeholders::_1));
+            prefix_ + "/cmd_vel", 10,
+            std::bind(&RobotNode::cmdVelCallback, this, std::placeholders::_1));     
+
+        tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+        
         robot_pos_subscription_ = this->create_subscription<geometry_msgs::msg::Vector3>(
             "/robot/bounding_box", 10,
             std::bind(&RobotNode::robotCallback, this, std::placeholders::_1));
@@ -225,6 +232,7 @@ private:
     }
 
     // ROS 2 Publishers and Subscribers
+    std::string prefix_;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
     rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr robot_pos_subscription_;
@@ -237,6 +245,7 @@ private:
 
     std::array<float, 2> startPose;
     std::atomic<bool> initPose;
+    std::string robot_ns_;
 
     // PID parameters
     float kp1_;

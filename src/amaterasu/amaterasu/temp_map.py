@@ -20,7 +20,7 @@ class FlippedMapPublisher(Node):
 
         # --- build the grid once ---
         grid = OccupancyGrid()
-        grid.header.frame_id = 'map'
+        grid.header.frame_id = 'camera'
 
         grid.info = MapMetaData()
         grid.info.resolution = 0.1
@@ -29,7 +29,7 @@ class FlippedMapPublisher(Node):
 
         # Place the origin at the world coords of the bottom‐right corner:
         origin = Pose()
-        origin.position.x = float(grid.info.width * grid.info.resolution) # 2.0 m
+        origin.position.x = 0.0 #float(grid.info.width * grid.info.resolution) # 2.0 m
         origin.position.y = 0.0
         origin.position.z = 0.0
         # Identity orientation (no built-in rotation)
@@ -42,14 +42,15 @@ class FlippedMapPublisher(Node):
         # Mark world-point (0.5,0.5) occupied:
         def mark(wx, wy):
             # u = map-x index = (origin.x − world.x) / res
-            u = int((origin.position.x - wx) / grid.info.resolution)
+            u = int(wx / grid.info.resolution)
             # v = map-y index = (world.y − origin.y) / res
-            v = int((wy - origin.position.y) / grid.info.resolution)
+            v = int(wy / grid.info.resolution)
             if 0 <= u < grid.info.width and 0 <= v < grid.info.height:
                 idx = v * grid.info.width + u
                 grid.data[idx] = 100
 
-        # mark(0.5, 0.5)
+        mark(0.8, 0.5)
+        mark(1.8, 0.0)
 
         self.grid = grid
         # publish once immediately, then at 1 Hz

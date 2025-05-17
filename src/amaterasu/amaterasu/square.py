@@ -11,8 +11,8 @@ from amaterasu_interfaces.action import GoToGoal
 
 from tf_transformations import euler_from_quaternion
 
-from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry, OccupancyGrid, Path
+from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import Imu
 
 class NavigateToGoal(Node):
@@ -21,8 +21,14 @@ class NavigateToGoal(Node):
 
         # 1) declare & read the robot namespace param
         self.declare_parameter('robot_ns', '')  # e.g. "robot1"
+        self.declare_parameter('robot_list', ['robot1', 'robot2'])
+
         ns = self.get_parameter('robot_ns').get_parameter_value().string_value
         prefix = f"/{ns}" if ns else ""
+        
+        robot_list = self.get_parameter('robot_list') \
+                              .get_parameter_value() \
+                              .string_array_value
 
         self.map_sub = self.create_subscription(OccupancyGrid, "/map", self.map_callback, 10)
 
@@ -31,10 +37,23 @@ class NavigateToGoal(Node):
             f"/robot1/localization",
             self.odom_callback,
             10)
+        
+        self.other_robot_positions = {}
+        for other_ns in robot_list:
+            if other_ns == ns: continue
+            self.create_subscription(
+                Odometry,
+                f"/{other_ns}/localization",
+                lambda msg, o=other_ns: self.other_odom_cb(msg, o),
+                10
+            )
+
         self.cmd_vel_pub = self.create_publisher(
             Twist,
             f"{prefix}/cmd_vel",
             10)
+        
+        self.path_pub = self.create_publisher(Path, f"{prefix}/path", 10)
 
         self.draw_square_action_service = ActionServer(
             self, 
@@ -65,6 +84,7 @@ class NavigateToGoal(Node):
 
         self.r_tolerance = 0.1 # meters
         self.theta_tolerance = 0.1 # radians ~ 5 degrees
+        self.safe_radius = 0.2 # meters
 
         self.sample_time = 0.01 # s
 
@@ -98,6 +118,12 @@ class NavigateToGoal(Node):
         orientation_q = msg.pose.pose.orientation
         quaternion = (orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w)
         _, _, self.current_theta = euler_from_quaternion(quaternion)
+
+    def other_odom_cb(self, msg: Odometry, other_ns):
+        self.other_robot_positions[other_ns] = (
+            msg.pose.pose.position.x,
+            msg.pose.pose.position.y
+        )
             
     def forward(self, speed):
         twist = Twist()
@@ -159,22 +185,31 @@ class NavigateToGoal(Node):
         data  = self.map.data
 
         def to_cell(wx, wy):
-            # world → map_index
-            i = int((ox - wx) / res)
+            i = int((wx - ox) / res)
             j = int((wy - oy) / res)
             return (i, j)
 
         def to_world(i, j):
-            # map_index → world (center of cell) on a flipped (right-origin) grid
-            x = ox - (i + 0.5) * res
+            x = ox + (i + 0.5) * res
             y = oy + (j + 0.5) * res
             return (x, y)
-        
+                
         def free(cell):
-            i, j = cell
-            if not (0 <= i < w and 0 <= j < h):
+            i,j = cell
+            if not (0<=i<w and 0<=j<h):
                 return False
-            return data[j*w + i] < 50
+            # static obstacles:
+            if data[j*w + i] >= 50:
+                return False
+
+            # dynamic: get the world‐coords of the center of that cell
+            wx, wy = to_world(i,j)
+            # if any robot is within r_safe, treat as blocked:
+            for (ox,oy) in self.other_robot_positions.values():
+                if math.hypot(wx-ox, wy-oy) < self.safe_radius:
+                    return False
+
+            return True
 
         start_c = to_cell(*start)
         goal_c  = to_cell(*goal)
@@ -219,6 +254,23 @@ class NavigateToGoal(Node):
 
         self.get_logger().warn("A* exhausted all nodes without hitting goal")
         return []
+    
+    def publish_path(self, waypoints):
+        path_msg = Path()
+        path_msg.header.stamp = self.get_clock().now().to_msg()
+        path_msg.header.frame_id = "camera"           # or whatever your global frame is
+
+        for (wx, wy) in waypoints:
+            ps = PoseStamped()
+            ps.header.stamp = path_msg.header.stamp
+            ps.header.frame_id = path_msg.header.frame_id
+            ps.pose.position.x = wx
+            ps.pose.position.y = wy
+            ps.pose.position.z = 0.0
+
+            path_msg.poses.append(ps)
+
+        self.path_pub.publish(path_msg)
 
     # Update goal coordinates
     def goal_callback(self, goal_request):
@@ -248,6 +300,7 @@ class NavigateToGoal(Node):
         start = (self.current_x, self.current_y)
         goal  = (goal_handle.request.x, goal_handle.request.y)
         waypoints = self.plan_path(start, goal)
+        self.publish_path(waypoints)
         self.get_logger().info(f"Waypoints: {waypoints}")
 
         if not waypoints:
@@ -277,6 +330,17 @@ class NavigateToGoal(Node):
                 # Stop condition
                 if (self.r_desired < self.r_tolerance):
                     break
+
+                for (ox,oy) in self.other_robot_positions.values():
+                    if math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius:
+                        self.get_logger().warn("Teammate blocking—replanning")
+                        self.stop()
+                        waypoints = self.plan_path(
+                            (self.current_x, self.current_y),
+                            (goal_handle.request.x, goal_handle.request.y)
+                        )
+                        self.publish_path(waypoints)
+                        break
                     
                 angular_z = self.calculate_w(self.theta_desired)
 

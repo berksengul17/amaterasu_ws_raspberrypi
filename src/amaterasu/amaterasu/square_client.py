@@ -9,24 +9,24 @@ class MultiRobotClient(Node):
     def __init__(self):
         super().__init__('multi_robot_client')
 
-        # 1) declare & read the list of robot namespaces
         self.declare_parameter('robot_list', ['robot1', 'robot2'])
         self.robot_list = self.get_parameter('robot_list') \
                               .get_parameter_value() \
                               .string_array_value
 
-        # 2) one ActionClient per robot
+        # one ActionClient per robot
         self.action_clients = {
             ns: ActionClient(self, GoToGoal, f"/{ns}/navigate_to_goal_service")
             for ns in self.robot_list
         }
-        # track busy/free state
+
+        # track busy/free state & active goal handles
         self.robot_busy = {ns: False for ns in self.robot_list}
+        self.current_goal_handles = {}   # ns -> goal_handle
 
         # queue of (x,y) goals
         self.goal_queue = []
 
-        # subscribe to the global goal source
         self.create_subscription(
             Float32MultiArray,
             '/fire_cell_goal',
@@ -34,16 +34,43 @@ class MultiRobotClient(Node):
             10)
 
     def fire_callback(self, msg: Float32MultiArray):
-        if len(msg.data) >= 2:
-            goal = (msg.data[0], msg.data[1])
-            if goal not in self.goal_queue:
-                self.goal_queue.append(goal)
-                self.get_logger().info(f"Queued goal: {goal}")
-                self.dispatch_goals()
+        if len(msg.data) < 2:
+            return
+        new_goal = (msg.data[0], msg.data[1])
+        if new_goal in self.goal_queue:
+            return
+
+        free_robots = [ns for ns, busy in self.robot_busy.items() if not busy]
+        if not free_robots:
+            # no free robot → preempt the first busy one
+            ns = next(ns for ns,busy in self.robot_busy.items() if busy)
+            self.get_logger().info(f"Preempting {ns} for new goal {new_goal}")
+            # enqueue your new goal
+            self.goal_queue.append(new_goal)
+            # send cancel to the running goal
+            self.cancel_current_goal(ns)
+        else:
+            # we have a free robot, just enqueue and dispatch
+            self.goal_queue.append(new_goal)
+
+        self.dispatch_goals()
+
+    def cancel_current_goal(self, ns: str):
+        gh = self.current_goal_handles.get(ns)
+        if gh:
+            self.get_logger().info(f"[{ns}] Sending cancel request")
+            cancel_future = gh.cancel_goal_async()
+            cancel_future.add_done_callback(lambda fut, ns=ns: self.on_cancel_done(ns))
+
+    def on_cancel_done(self, ns: str):
+        self.get_logger().info(f"[{ns}] Cancel confirmed")
+        # mark it free so dispatch_goals can grab it
+        self.robot_busy[ns] = False
+        # immediate re‐dispatch (will pick up your newly enqueued goal)
+        self.dispatch_goals()
 
     def dispatch_goals(self):
-        # as long as we have free robots and queued goals, assign them
-        free_robots = [ns for ns, busy in self.robot_busy.items() if not busy]
+        free_robots = [ns for ns,busy in self.robot_busy.items() if not busy]
         while free_robots and self.goal_queue:
             ns = free_robots.pop(0)
             x, y = self.goal_queue.pop(0)
@@ -65,13 +92,6 @@ class MultiRobotClient(Node):
             lambda fut, ns=ns: self.handle_response(ns, fut)
         )
 
-    def feedback_cb(self, ns: str, feedback_msg):
-        fb = feedback_msg.feedback
-        self.get_logger().info(
-            f"[{ns}] Feedback: x={fb.current_x:.2f}, "
-            f"y={fb.current_y:.2f}, d={fb.distance:.2f}"
-        )
-
     def handle_response(self, ns: str, goal_future):
         goal_handle = goal_future.result()
         if not goal_handle.accepted:
@@ -81,6 +101,9 @@ class MultiRobotClient(Node):
             return
 
         self.get_logger().info(f"[{ns}] Goal accepted")
+        # store so we can cancel it later
+        self.current_goal_handles[ns] = goal_handle
+
         get_result_future = goal_handle.get_result_async()
         get_result_future.add_done_callback(
             lambda fut, ns=ns: self.handle_result(ns, fut)
@@ -88,12 +111,16 @@ class MultiRobotClient(Node):
 
     def handle_result(self, ns: str, result_future):
         result = result_future.result().result
-        self.get_logger().info(
-            f"[{ns}] Result: goal_reached={result.goal_reached}"
-        )
-        # mark robot free and dispatch any remaining goals
+        self.get_logger().info(f"[{ns}] Result: goal_reached={result.goal_reached}")
         self.robot_busy[ns] = False
         self.dispatch_goals()
+
+    def feedback_cb(self, ns: str, feedback_msg):
+        fb = feedback_msg.feedback
+        self.get_logger().info(
+            f"[{ns}] Feedback: x={fb.current_x:.2f}, "
+            f"y={fb.current_y:.2f}, d={fb.distance:.2f}"
+        )
 
 def main(args=None):
     rclpy.init(args=args)

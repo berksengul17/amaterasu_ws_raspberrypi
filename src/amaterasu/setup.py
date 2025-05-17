@@ -30,7 +30,8 @@ setup(
             'turn_90 = amaterasu.turn_90:main',
             'localization = amaterasu.localization:main',
             'square_client = amaterasu.square_client:main',
-            'map = amaterasu.temp_map:main'
+            'map = amaterasu.temp_map:main',
+            'sim_localization = amaterasu.sim_localization:main'
         ],
     },
 )
