@@ -20,6 +20,9 @@ class SimPlaybackNode(Node):
         self.delay_steps  = int(round(1.0/0.04))
         self.sim_queue    = deque()
 
+        self.L = 0.15
+        self.W = 0.13
+
         self.timer = self.create_timer(0.04, self.publish_sim)
 
     def odom_cb(self, msg: Odometry):
@@ -28,6 +31,12 @@ class SimPlaybackNode(Node):
         y = msg.pose.pose.position.y
         q = msg.pose.pose.orientation
         yaw = euler_from_quaternion([q.x,q.y,q.z,q.w])[2]
+        
+        offset = np.array([np.cos(yaw)*self.L/2 + np.sin(yaw)*self.W/2,
+                    np.sin(yaw)*self.L/2 + np.cos(yaw)*self.W/2, 0.0])
+        x -= offset[0]
+        y -= offset[1]
+
         self.delay_buffer.append(np.array([x,y,yaw]))
 
         if len(self.delay_buffer) >= self.delay_steps:
@@ -48,11 +57,15 @@ class SimPlaybackNode(Node):
         if not self.sim_queue:
             return
         p = self.sim_queue.popleft()
+        yaw = p[2]
+        offset = np.array([np.cos(yaw)*self.L/2 + np.sin(yaw)*self.W/2,
+            np.sin(yaw)*self.L/2 + np.cos(yaw)*self.W/2, 0.0])
+        
         sim = Odometry()
         sim.header.stamp = self.get_clock().now().to_msg()
         sim.header.frame_id = 'camera'
-        sim.pose.pose.position.x = float(p[0]) * 10.0
-        sim.pose.pose.position.y = float(p[1]) * 10.0
+        sim.pose.pose.position.x = float(p[0]) * 10.0 + offset[0]
+        sim.pose.pose.position.y = float(p[1]) * 10.0 + offset[1]
         sim.pose.pose.position.z = 0.022
         q = quaternion_from_euler(0,0,float(p[2]))
         sim.pose.pose.orientation.x = q[0]; sim.pose.pose.orientation.y = q[1]
