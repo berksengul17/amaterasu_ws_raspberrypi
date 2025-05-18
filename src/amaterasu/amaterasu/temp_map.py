@@ -18,19 +18,26 @@ class FlippedMapPublisher(Node):
 
         self.pub = self.create_publisher(OccupancyGrid, 'map', qos)
 
+        width = 20
+        height = 20
+        res = 0.1
+
         # --- build the grid once ---
         grid = OccupancyGrid()
         grid.header.frame_id = 'camera'
 
         grid.info = MapMetaData()
-        grid.info.resolution = 0.1
-        grid.info.width  = 20
-        grid.info.height = 20
+        grid.info.resolution = res
+        grid.info.width  = width
+        grid.info.height = height
+
+        half_w = width  * res / 2.0   # = 1.0
+        half_h = height * res / 2.0   # = 1.0
 
         # Place the origin at the world coords of the bottom‐right corner:
         origin = Pose()
-        origin.position.x = 0.0 #float(grid.info.width * grid.info.resolution) # 2.0 m
-        origin.position.y = 0.0
+        origin.position.x = -half_w + res/2.0
+        origin.position.y = -half_h + res/2.0
         origin.position.z = 0.0
         # Identity orientation (no built-in rotation)
         origin.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
@@ -41,16 +48,17 @@ class FlippedMapPublisher(Node):
 
         # Mark world-point (0.5,0.5) occupied:
         def mark(wx, wy):
-            # u = map-x index = (origin.x − world.x) / res
-            u = int(wx / grid.info.resolution)
-            # v = map-y index = (world.y − origin.y) / res
-            v = int(wy / grid.info.resolution)
+            ox = grid.info.origin.position.x
+            oy = grid.info.origin.position.y
+            # compute the column / row relative to the origin
+            u = int((wx - ox) / grid.info.resolution)
+            v = int((wy - oy) / grid.info.resolution)
             if 0 <= u < grid.info.width and 0 <= v < grid.info.height:
                 idx = v * grid.info.width + u
                 grid.data[idx] = 100
 
-        mark(0.8, 0.5)
-        mark(1.8, 0.0)
+        # mark(0.8, 0.5)
+        # mark(1.0, 0.0)
 
         self.grid = grid
         # publish once immediately, then at 1 Hz

@@ -1,4 +1,5 @@
 import rclpy
+import math
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener
@@ -64,6 +65,13 @@ class AprilTagLocalizationNode(Node):
         self.prev_pos = np.zeros(3)
         self.first_update = True
 
+        self.T_x180 = np.array([
+            [ 1,  0,  0, 0],
+            [ 0, -1,  0, 0],
+            [ 0,  0, -1, 0],
+            [ 0,  0,  0, 1],
+        ])
+
         # filters
         self.pos_filter = OneEuro(min_cutoff=2.0, beta=4.0, d_cutoff=5.0)
         self.yaw_filter = OneEuro(min_cutoff=1.0, beta=2.0, d_cutoff=5.0)
@@ -94,20 +102,25 @@ class AprilTagLocalizationNode(Node):
             T_ct[:3,:3] = quaternion_matrix([q.x,q.y,q.z,q.w])[:3,:3]
             T_ct[:3,3] = [t.x, t.y, t.z]
 
-            if self.T0 is None:
-                tf_ref = self.tf_buffer.lookup_transform(self.origin_frame, self.global_tag, rclpy.time.Time())
-                tr, qr = tf_ref.transform.translation, tf_ref.transform.rotation
-                G = np.eye(4)
-                G[:3,:3] = quaternion_matrix([qr.x,qr.y,qr.z,qr.w])[:3,:3]
-                G[:3,3]  = [tr.x, tr.y, tr.z]
-                self.T0 = G
-                self.get_logger().info(f"Global origin set by {self.global_tag}")
-                return
+            T_ct = self.T_x180 @ T_ct
 
-            T0_inv = np.linalg.inv(self.T0)
-            Tor = T0_inv @ T_ct
-            pos = Tor[:3,3]
-            yaw = euler_from_quaternion(quaternion_from_matrix(Tor))[2]
+            # if self.T0 is None:
+            #     tf_ref = self.tf_buffer.lookup_transform(self.origin_frame, self.global_tag, rclpy.time.Time())
+            #     tr, qr = tf_ref.transform.translation, tf_ref.transform.rotation
+            #     G = np.eye(4)
+            #     G[:3,:3] = quaternion_matrix([qr.x,qr.y,qr.z,qr.w])[:3,:3]
+            #     G[:3,3]  = [tr.x, tr.y, tr.z]
+            #     self.T0 = G
+            #     self.get_logger().info(f"Global origin set by {self.global_tag}")
+            #     return
+
+            # T0_inv = np.linalg.inv(self.T0)
+            # Tor = T0_inv @ T_ct
+            pos = T_ct[:3,3]
+            yaw = euler_from_quaternion(quaternion_from_matrix(T_ct))[2]
+            # yaw -= math.pi/2
+            # yaw = math.atan2(math.sin(yaw), math.cos(yaw))
+
             # offset to center
             L,W = 0.15,0.13
             offset = np.array([np.cos(yaw)*L/2 + np.sin(yaw)*W/2,
@@ -139,7 +152,7 @@ class AprilTagLocalizationNode(Node):
             odom.pose.pose.orientation.z = q2[2]; odom.pose.pose.orientation.w = q2[3]
             self.odom_pub.publish(odom)
 
-            self.get_logger().info(f"x: {fused[0]} y: {fused[1]}")
+            self.get_logger().info(f"x: {fused[0]} y: {fused[1]} yaw: {np.rad2deg(fused[2])}")
 
         except Exception as e:
             self.get_logger().warn(f"Transform unavailable: {e}")

@@ -34,7 +34,7 @@ class NavigateToGoal(Node):
 
         self.odom_sub = self.create_subscription(
             Odometry,
-            f"/robot1/localization",
+            f"{prefix}/localization",
             self.odom_callback,
             10)
         
