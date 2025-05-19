@@ -237,15 +237,22 @@ class NavigateToGoal(Node):
                     path.append(to_world(*cur))
                     cur = came_from[cur]
                 return list(reversed(path))
+            
+            dirs = [
+                (1,0), (-1,0), (0,1), (0,-1),
+                (1,1), (1,-1), (-1,1), (-1,-1)
+            ]
 
-            for di, dj in [(1,0),(-1,0),(0,1),(0,-1)]:
+            for di, dj in dirs:
                 nb = (cur[0] + di, cur[1] + dj)
                 is_free = free(nb)
                 self.get_logger().info(f"  Neighbor {nb} → free? {is_free}")
                 if not is_free:
                     continue
 
-                tentative = g_score[cur] + 1
+                move_cost = math.hypot(di, dj)
+                tentative = g_score[cur] + move_cost
+
                 if tentative < g_score.get(nb, float('inf')):
                     came_from[nb] = cur
                     g_score[nb] = tentative

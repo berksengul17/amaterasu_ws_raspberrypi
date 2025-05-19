@@ -145,14 +145,14 @@ class AprilTagLocalizationNode(Node):
             odom = Odometry()
             odom.header.stamp = now.to_msg()
             odom.header.frame_id = self.origin_frame
-            odom.pose.pose.position.x = float(fused[0])
-            odom.pose.pose.position.y = float(fused[1])
-            q2 = quaternion_from_euler(0,0,float(fused[2]))
+            odom.pose.pose.position.x = float(pos[0])
+            odom.pose.pose.position.y = float(pos[1])
+            q2 = quaternion_from_euler(0,0,float(yaw))
             odom.pose.pose.orientation.x = q2[0]; odom.pose.pose.orientation.y = q2[1]
             odom.pose.pose.orientation.z = q2[2]; odom.pose.pose.orientation.w = q2[3]
             self.odom_pub.publish(odom)
 
-            self.get_logger().info(f"x: {fused[0]} y: {fused[1]} yaw: {np.rad2deg(fused[2])}")
+            self.get_logger().info(f"x: {pos[0]} y: {pos[1]} yaw: {np.rad2deg(yaw)}")
 
         except Exception as e:
             self.get_logger().warn(f"Transform unavailable: {e}")
