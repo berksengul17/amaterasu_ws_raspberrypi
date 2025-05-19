@@ -30,7 +30,7 @@ class NavigateToGoal(Node):
                               .get_parameter_value() \
                               .string_array_value
         # robot_priorities = {robot1: 0, robot2: 1}
-        self.robot_priorities = {ns: i for i,ns in enumerate(self.robot_list)}
+        self.robot_priorities = {ns: i for i,ns in enumerate(robot_list)}
         self.my_priority     = self.robot_priorities[ns]
 
         self.map_sub = self.create_subscription(OccupancyGrid, "/map", self.map_callback, 10)
@@ -324,12 +324,15 @@ class NavigateToGoal(Node):
                 goal_handle.abort()
                 return GoToGoal.Result(goal_reached=False)
 
+            self.get_logger().warn(f"Waypoints: {waypoints}")
+
             blocked = False
 
             # 2) try to follow that path
             for idx, (gx, gy) in enumerate(waypoints):
                 self.goal_x, self.goal_y = gx, gy
                 self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
+                self.get_logger().info(f"Current position: ({self.current_x}, {self.current_y})")
                 self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
 
                 # inner “drive toward this waypoint” loop
@@ -377,6 +380,8 @@ class NavigateToGoal(Node):
 
                     self.execute_rate.sleep()
 
+
+                self.get_logger().info(f'---------------------------------------------------------')
                 # if we got blocked, break out to replan
                 if blocked:
                     break
