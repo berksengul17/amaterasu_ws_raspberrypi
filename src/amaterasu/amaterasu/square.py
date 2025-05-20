@@ -340,7 +340,8 @@ class NavigateToGoal(Node):
 
                 # compute errors
                 self.theta_desired = self.calculate_theta_desired()
-                self.r_desired     = self.calculate_distance_to_goal()
+                self.r_desired = self.calculate_distance_to_goal()
+                self.get_logger().info(f"{self.theta_desired} {self.current_theta}")
 
                 # reached this waypoint?
                 if self.r_desired < self.r_tolerance:

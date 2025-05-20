@@ -18,9 +18,9 @@ class FlippedMapPublisher(Node):
 
         self.pub = self.create_publisher(OccupancyGrid, 'map', qos)
 
-        width = 20
-        height = 20
-        res = 0.1
+        width = 10
+        height = 10
+        res = 0.2
 
         # --- build the grid once ---
         grid = OccupancyGrid()
