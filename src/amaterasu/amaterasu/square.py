@@ -311,87 +311,69 @@ class NavigateToGoal(Node):
         # initial start & goal
         start = (self.current_x, self.current_y)
         goal  = (goal_handle.request.x, goal_handle.request.y)
-
         feedback = GoToGoal.Feedback()
 
-        # Outer “replan until we succeed” loop
-        while rclpy.ok():
-            # 1) plan once
-            waypoints = self.plan_path(start, goal)
-            self.publish_path(waypoints)
-            if not waypoints:
-                self.get_logger().error("No path found!")
-                goal_handle.abort()
-                return GoToGoal.Result(goal_reached=False)
+        # 1) plan once
+        waypoints = self.plan_path(start, goal)
+        self.publish_path(waypoints)
+        if not waypoints:
+            self.get_logger().error("No path found!")
+            goal_handle.abort()
+            return GoToGoal.Result(goal_reached=False)
 
-            self.get_logger().warn(f"Waypoints: {waypoints}")
+        self.get_logger().warn(f"Waypoints: {waypoints}")
 
-            blocked = False
+        # 2) try to follow that path
+        for idx, (gx, gy) in enumerate(waypoints):
+            self.goal_x, self.goal_y = gx, gy
+            self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
+            self.get_logger().info(f"Current position: ({self.current_x}, {self.current_y})")
+            self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
 
-            # 2) try to follow that path
-            for idx, (gx, gy) in enumerate(waypoints):
-                self.goal_x, self.goal_y = gx, gy
-                self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
-                self.get_logger().info(f"Current position: ({self.current_x}, {self.current_y})")
-                self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
+            # inner “drive toward this waypoint” loop
+            while rclpy.ok():
+                # handle cancel
+                if goal_handle.is_cancel_requested:
+                    self.get_logger().warn("Goal was canceled")
+                    self.stop()
+                    goal_handle.canceled()
+                    return GoToGoal.Result(goal_reached=False)
 
-                # inner “drive toward this waypoint” loop
-                while rclpy.ok():
-                    # handle cancel
-                    if goal_handle.is_cancel_requested:
-                        self.get_logger().warn("Goal was canceled")
-                        self.stop()
-                        goal_handle.canceled()
-                        return GoToGoal.Result(goal_reached=False)
+                # compute errors
+                self.theta_desired = self.calculate_theta_desired()
+                self.r_desired     = self.calculate_distance_to_goal()
 
-                    # compute errors
-                    self.theta_desired = self.calculate_theta_desired()
-                    self.r_desired     = self.calculate_distance_to_goal()
-
-                    # reached this waypoint?
-                    if self.r_desired < self.r_tolerance:
-                        break
-
-                    # dynamic‐obstacle check (only yield to higher-priority robots)
-                    for ons, (ox,oy) in self.other_robot_positions.items():
-                        if (self.my_priority > self.robot_priorities[ons] and
-                            math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius):
-                            self.get_logger().warn("Blocked by teammate—will replan")
-                            self.stop()
-                            blocked = True
-                            break
-                    if blocked:
-                        break
-
-                    # normal driving
-                    angular_z = self.calculate_w(self.theta_desired)
-                    linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else 0.15
-
-                    twist = Twist()
-                    twist.linear.x  = float(linear_x)
-                    twist.angular.z = float(angular_z)
-                    self.cmd_vel_pub.publish(twist)
-
-                    # publish feedback
-                    feedback.current_x = float(self.current_x)
-                    feedback.current_y = float(self.current_y)
-                    feedback.distance  = float(self.r_desired)
-                    goal_handle.publish_feedback(feedback)
-
-                    self.execute_rate.sleep()
-
-
-                self.get_logger().info(f'---------------------------------------------------------')
-                # if we got blocked, break out to replan
-                if blocked:
+                # reached this waypoint?
+                if self.r_desired < self.r_tolerance:
                     break
 
-            # if we made it through all waypoints without blocking, we're done
-            if not blocked:
-                break
+                # dynamic‐obstacle check (only yield to higher-priority robots)
+                for ons, (ox,oy) in self.other_robot_positions.items():
+                    if (self.my_priority > self.robot_priorities[ons] and
+                        math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius):
+                        self.get_logger().warn("Blocked by teammate waiting for it to pass")
+                        self.stop()
+                        break
 
-            # else: update start to wherever we are now, and loop back to replan
-            start = (self.current_x, self.current_y)
+                # normal driving
+                angular_z = self.calculate_w(self.theta_desired)
+                linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else 0.15
+
+                twist = Twist()
+                twist.linear.x  = float(linear_x)
+                twist.angular.z = float(angular_z)
+                self.cmd_vel_pub.publish(twist)
+
+                # publish feedback
+                feedback.current_x = float(self.current_x)
+                feedback.current_y = float(self.current_y)
+                feedback.distance  = float(self.r_desired)
+                goal_handle.publish_feedback(feedback)
+
+                self.execute_rate.sleep()
+
+
+            self.get_logger().info(f'---------------------------------------------------------')
 
         # final stop + success
         for _ in range(10):
