@@ -87,7 +87,7 @@ class NavigateToGoal(Node):
 
         self.r_tolerance = 0.1 # meters
         self.theta_tolerance = 0.1 # radians ~ 5 degrees
-        self.safe_radius = 0.2 # meters
+        self.safe_radius = 0.4 # meters
 
         self.sample_time = 0.01 # s
 
@@ -328,7 +328,6 @@ class NavigateToGoal(Node):
             self.goal_x, self.goal_y = gx, gy
             self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
             self.get_logger().info(f"Current position: ({self.current_x}, {self.current_y})")
-            self.get_logger().info(f"Theta desired: {self.theta_desired} | R desired: {self.r_desired}")
 
             # inner “drive toward this waypoint” loop
             while rclpy.ok():
@@ -357,7 +356,7 @@ class NavigateToGoal(Node):
                             break
                         elif (math.hypot(self.current_x-ox, self.current_y-oy) < 2 * self.safe_radius):
                             self.get_logger().warn(f"Coming close to teammate.\nCurrent pos: ({self.current_x}, {self.current_y}) | Other pos: ({ox}, {oy})")
-                            speed = speed / 2
+                            speed = 0.12
 
                 # normal driving
                 angular_z = self.calculate_w(self.theta_desired)

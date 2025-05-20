@@ -118,8 +118,8 @@ class AprilTagLocalizationNode(Node):
             # Tor = T0_inv @ T_ct
             pos = T_ct[:3,3]
             yaw = euler_from_quaternion(quaternion_from_matrix(T_ct))[2]
-            # yaw -= math.pi/2
-            # yaw = math.atan2(math.sin(yaw), math.cos(yaw))
+            yaw += math.pi/2
+            yaw = math.atan2(math.sin(yaw), math.cos(yaw))
 
             # offset to center
             L,W = 0.15,0.13
