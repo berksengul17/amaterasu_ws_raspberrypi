@@ -347,17 +347,21 @@ class NavigateToGoal(Node):
                 if self.r_desired < self.r_tolerance:
                     break
 
+                speed = 0.15
                 # dynamic‐obstacle check (only yield to higher-priority robots)
                 for ons, (ox,oy) in self.other_robot_positions.items():
-                    if (self.my_priority > self.robot_priorities[ons] and
-                        math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius):
-                        self.get_logger().warn("Blocked by teammate waiting for it to pass")
-                        self.stop()
-                        break
+                    if (self.my_priority > self.robot_priorities[ons]):
+                        if (math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius):
+                            self.get_logger().warn(f"Blocked by teammate waiting for it to pass.\nCurrent pos: ({self.current_x}, {self.current_y}) | Other pos: ({ox}, {oy})")
+                            self.stop()
+                            break
+                        elif (math.hypot(self.current_x-ox, self.current_y-oy) < 2 * self.safe_radius):
+                            self.get_logger().warn(f"Coming close to teammate.\nCurrent pos: ({self.current_x}, {self.current_y}) | Other pos: ({ox}, {oy})")
+                            speed = speed / 2
 
                 # normal driving
                 angular_z = self.calculate_w(self.theta_desired)
-                linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else 0.15
+                linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else speed
 
                 twist = Twist()
                 twist.linear.x  = float(linear_x)
