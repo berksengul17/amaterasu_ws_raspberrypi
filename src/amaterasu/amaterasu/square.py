@@ -146,6 +146,11 @@ class NavigateToGoal(Node):
         # PID formula
         angular_z = self.kp_turn * yaw_error
 
+        if angular_z > 1.0:
+            angular_z = 1.0
+        elif angular_z < -1.0:
+            angular_z = -1.0
+
         if (abs(angular_z) < 0.1): angular_z = 0.0
 
         return angular_z
@@ -341,7 +346,7 @@ class NavigateToGoal(Node):
                 # compute errors
                 self.theta_desired = self.calculate_theta_desired()
                 self.r_desired = self.calculate_distance_to_goal()
-                self.get_logger().info(f"{self.theta_desired} {self.current_theta}")
+                self.get_logger().info(f"{self.r_desired}")
 
                 # reached this waypoint?
                 if self.r_desired < self.r_tolerance:
