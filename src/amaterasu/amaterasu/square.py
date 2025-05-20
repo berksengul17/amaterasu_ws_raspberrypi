@@ -87,7 +87,6 @@ class NavigateToGoal(Node):
 
         self.r_tolerance = 0.1 # meters
         self.theta_tolerance = 0.1 # radians ~ 5 degrees
-        self.safe_radius = 0.4 # meters
 
         self.sample_time = 0.01 # s
 
@@ -109,6 +108,12 @@ class NavigateToGoal(Node):
         self.turn_speed = 1.0 # radians/s
 
         self.execute_rate = self.create_rate(1/self.sample_time)
+
+        L = 0.27
+        W = 0.16
+
+        self.robot_radius = math.hypot(L/2.0, W/2.0)
+        self.safe_radius = self.robot_radius + 0.1
 
     def map_callback(self, msg: OccupancyGrid):
         self.map = msg
@@ -214,7 +219,7 @@ class NavigateToGoal(Node):
             wx, wy = to_world(i,j)
             # if any robot is within r_safe, treat as blocked:
             for (ox,oy) in self.other_robot_positions.values():
-                if math.hypot(wx-ox, wy-oy) < self.safe_radius:
+                if math.hypot(wx-ox, wy-oy) < self.safe_radius*2.0:
                     return False
 
             return True
@@ -352,17 +357,16 @@ class NavigateToGoal(Node):
                 if self.r_desired < self.r_tolerance:
                     break
 
-                speed = 0.15
+                speed = 0.1
                 # dynamic‐obstacle check (only yield to higher-priority robots)
                 for ons, (ox,oy) in self.other_robot_positions.items():
                     if (self.my_priority > self.robot_priorities[ons]):
-                        if (math.hypot(self.current_x-ox, self.current_y-oy) < self.safe_radius):
+                        if (math.hypot(self.current_x-ox, self.current_y-oy) < 2*self.safe_radius):
                             self.get_logger().warn(f"Blocked by teammate waiting for it to pass.\nCurrent pos: ({self.current_x}, {self.current_y}) | Other pos: ({ox}, {oy})")
-                            self.stop()
+                            for _ in range(10):
+                                self.stop()
+                                self.execute_rate.sleep()
                             break
-                        elif (math.hypot(self.current_x-ox, self.current_y-oy) < 2 * self.safe_radius):
-                            self.get_logger().warn(f"Coming close to teammate.\nCurrent pos: ({self.current_x}, {self.current_y}) | Other pos: ({ox}, {oy})")
-                            speed = 0.12
 
                 # normal driving
                 angular_z = self.calculate_w(self.theta_desired)
