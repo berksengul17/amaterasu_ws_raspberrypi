@@ -57,6 +57,7 @@ class NavigateToGoal(Node):
             10)
         
         self.path_pub = self.create_publisher(Path, f"{prefix}/path", 10)
+        self.followed_path_pub = self.create_publisher(Path, f"{prefix}/followed_path", 10)
 
         self.draw_square_action_service = ActionServer(
             self, 
@@ -85,8 +86,8 @@ class NavigateToGoal(Node):
         self.r_desired = 0
         self.theta_desired = 0
 
-        self.r_tolerance = 0.1 # meters
-        self.theta_tolerance = 0.1 # radians ~ 5 degrees
+        self.r_tolerance = 0.2 # meters
+        self.theta_tolerance = 0.2 # radians ~ 5 degrees
 
         self.sample_time = 0.01 # s
 
@@ -333,9 +334,14 @@ class NavigateToGoal(Node):
 
         self.get_logger().warn(f"Waypoints: {waypoints}")
 
+        path = Path()
+        path.header.frame_id = "camera"   # or your global frame
+
+        idx = 0
         # 2) try to follow that path
-        for idx, (gx, gy) in enumerate(waypoints):
-            self.goal_x, self.goal_y = gx, gy
+        while idx < len(waypoints) and rclpy.ok():
+            gx, gy = waypoints[idx]
+            self.goal_x, self.goal_y = gx, gy 
             self.get_logger().info(f"Moving to waypoint {idx}: ({self.goal_x}, {self.goal_y})")
             self.get_logger().info(f"Current position: ({self.current_x}, {self.current_y})")
 
@@ -351,13 +357,26 @@ class NavigateToGoal(Node):
                 # compute errors
                 self.theta_desired = self.calculate_theta_desired()
                 self.r_desired = self.calculate_distance_to_goal()
-                self.get_logger().info(f"{self.r_desired}")
+                dists = [
+                    math.hypot(self.current_x - wx, self.current_y - wy)
+                    for (wx, wy) in waypoints[idx:]
+                ]
+                min_rel_i = int(np.argmin(dists))
+                if min_rel_i > 0:
+                    # skip ahead!
+                    new_idx = idx + min_rel_i
+                    self.get_logger().info(
+                        f"Skipping from waypoint {idx} to closer waypoint {new_idx}"
+                    )
+                    idx = new_idx
+                    break  # break inner loop, outer loop will pick up new idx
 
                 # reached this waypoint?
                 if self.r_desired < self.r_tolerance:
+                    idx += 1
                     break
 
-                speed = 0.1
+                speed = 0.15
                 # dynamic‐obstacle check (only yield to higher-priority robots)
                 for ons, (ox,oy) in self.other_robot_positions.items():
                     if (self.my_priority > self.robot_priorities[ons]):
@@ -372,6 +391,12 @@ class NavigateToGoal(Node):
                 angular_z = self.calculate_w(self.theta_desired)
                 linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else speed
 
+                if (linear_x == 0):
+                    if (angular_z > 0 and angular_z < 1):
+                        angular_z = 0.7
+                    elif (angular_z < 0 and angular_z > -1):
+                        angular_z = -0.7
+
                 twist = Twist()
                 twist.linear.x  = float(linear_x)
                 twist.angular.z = float(angular_z)
@@ -382,6 +407,17 @@ class NavigateToGoal(Node):
                 feedback.current_y = float(self.current_y)
                 feedback.distance  = float(self.r_desired)
                 goal_handle.publish_feedback(feedback)
+
+                ps = PoseStamped()
+                ps.header.frame_id = path.header.frame_id
+                ps.header.stamp = self.get_clock().now().to_msg()
+                ps.pose.position.x = self.current_x
+                ps.pose.position.y = self.current_y
+                ps.pose.position.z = 0.0
+                path.poses.append(ps)
+
+                path.header.stamp = ps.header.stamp
+                self.followed_path_pub.publish(path)
 
                 self.execute_rate.sleep()
 

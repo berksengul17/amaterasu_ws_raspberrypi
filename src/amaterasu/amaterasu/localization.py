@@ -10,6 +10,7 @@ from tf_transformations import (
     quaternion_from_euler
 )
 import numpy as np
+from apriltag_msgs.msg import AprilTagDetectionArray
 
 
 def alpha(cutoff, dt):
@@ -53,6 +54,7 @@ class AprilTagLocalizationNode(Node):
         # publishers & subscriptions
         self.odom_pub = self.create_publisher(Odometry, f"{prefix}/localization", 10)
         self.odom_sub = self.create_subscription(Odometry, f'{prefix}/odom', self.odom_callback, 10)
+        self.detections_sub = self.create_subscription(AprilTagDetectionArray, "/detections", self.detections_callback, 10)
 
         # TF
         self.tf_buffer   = Buffer()
@@ -63,6 +65,7 @@ class AprilTagLocalizationNode(Node):
         self.v = 0.0; self.w = 0.0
         self.last_stamp = None
         self.prev_pos = np.zeros(3)
+        self.prev_yaw = 0.0
         self.first_update = True
 
         self.T_x180 = np.array([
@@ -77,12 +80,19 @@ class AprilTagLocalizationNode(Node):
         self.yaw_filter = OneEuro(min_cutoff=1.0, beta=2.0, d_cutoff=5.0)
         self.v0, self.alpha_min, self.alpha_max = 0.2, 0.1, 0.9
         self.max_jump = 0.2
+        self.new_measurement = False
 
-        self.timer = self.create_timer(0.04, self.lookup_transform)
+        self.timer = self.create_timer(0.01, self.lookup_transform)
 
     def odom_callback(self, msg: Odometry):
         self.v = msg.twist.twist.linear.x
         self.w = msg.twist.twist.angular.z
+
+    def detections_callback(self, msg: AprilTagDetectionArray): 
+        self.new_measurement = False
+        for detection in msg.detections:
+            if (f"{detection.family}_{detection.id}" == self.tag_frame):
+                self.new_measurement = True
 
     def compute_alpha(self, v):
         return self.alpha_min + (self.alpha_max-self.alpha_min)*(abs(v)/(abs(v)+self.v0))
@@ -95,65 +105,62 @@ class AprilTagLocalizationNode(Node):
         dt = (now - self.last_stamp).nanoseconds * 1e-9
         self.last_stamp = now
 
+        # 1) DEAD-RECKONING PREDICTION from last state:
+        #    x_pred = x_prev + v * cos(yaw) * dt
+        #    y_pred = y_prev + v * sin(yaw) * dt
+        #    yaw_pred = yaw_prev + w * dt   (if you want to include angular)
+        pred = self.prev_pos + self.v * np.array([np.cos(self.prev_yaw),
+                                                np.sin(self.prev_yaw),
+                                                0.0]) * dt
+
+        # 2) TRY APRILTAG MEASUREMENT
         try:
-            tf_tag = self.tf_buffer.lookup_transform(self.origin_frame, self.tag_frame, rclpy.time.Time())
+            tf_tag = self.tf_buffer.lookup_transform(
+                self.origin_frame, self.tag_frame, rclpy.time.Time())
             t, q = tf_tag.transform.translation, tf_tag.transform.rotation
+            
             T_ct = np.eye(4)
             T_ct[:3,:3] = quaternion_matrix([q.x,q.y,q.z,q.w])[:3,:3]
             T_ct[:3,3] = [t.x, t.y, t.z]
-
             T_ct = self.T_x180 @ T_ct
 
-            # if self.T0 is None:
-            #     tf_ref = self.tf_buffer.lookup_transform(self.origin_frame, self.global_tag, rclpy.time.Time())
-            #     tr, qr = tf_ref.transform.translation, tf_ref.transform.rotation
-            #     G = np.eye(4)
-            #     G[:3,:3] = quaternion_matrix([qr.x,qr.y,qr.z,qr.w])[:3,:3]
-            #     G[:3,3]  = [tr.x, tr.y, tr.z]
-            #     self.T0 = G
-            #     self.get_logger().info(f"Global origin set by {self.global_tag}")
-            #     return
+            meas_pos = T_ct[:3,3]
+            meas_yaw = euler_from_quaternion(quaternion_from_matrix(T_ct))[2]
 
-            # T0_inv = np.linalg.inv(self.T0)
-            # Tor = T0_inv @ T_ct
-            pos = T_ct[:3,3]
-            yaw = euler_from_quaternion(quaternion_from_matrix(T_ct))[2]
-
-            # offset to center
-            L,W = 0.15,0.13
-            offset = np.array([np.cos(yaw)*L/2 + np.sin(yaw)*W/2,
-                               np.sin(yaw)*L/2 + np.cos(yaw)*W/2, 0.0])
-            pos[:2] += offset[:2]
-
-            if self.first_update:
-                self.prev_pos = np.array([pos[0], pos[1], yaw])
-                self.first_update = False
-
-            pred = self.prev_pos + self.v*np.array([np.cos(yaw), np.sin(yaw),0])*dt
-            a = self.compute_alpha(self.v)
-            if np.linalg.norm(pos[:2]-pred[:2]) > self.max_jump:
-                fused = pred
+            # 3) FUSE (if you want, include your OneEuro filters here)
+            if self.new_measurement:
+                # simple α-blend between pred and meas
+                a = self.compute_alpha(self.v)
+                fused = a * np.array([meas_pos[0], meas_pos[1], meas_yaw]) + \
+                        (1-a) * pred
             else:
-                fused = a*pos + (1-a)*pred
-            fused[:2] = self.pos_filter.filt(fused[:2], dt)
-            fused[2]  = self.yaw_filter.filt(np.array([yaw]), dt)[0]
-            self.prev_pos = fused.copy()
+                fused = pred
 
-            # publish real odom
+            # update internal state
+            fused[:2] = self.pos_filter.filt(fused[:2], dt)
+            fused[2]  = self.yaw_filter.filt(np.array([fused[2]]), dt)[0]
+
+            self.prev_pos = fused.copy()
+            self.prev_yaw = fused[2]
+
+            # 4) PUBLISH fused estimate as Odometry
             odom = Odometry()
             odom.header.stamp = now.to_msg()
             odom.header.frame_id = self.origin_frame
-            odom.pose.pose.position.x = float(pos[0])
-            odom.pose.pose.position.y = float(pos[1])
-            q2 = quaternion_from_euler(0,0,float(yaw))
-            odom.pose.pose.orientation.x = q2[0]; odom.pose.pose.orientation.y = q2[1]
-            odom.pose.pose.orientation.z = q2[2]; odom.pose.pose.orientation.w = q2[3]
+            odom.pose.pose.position.x = float(fused[0])
+            odom.pose.pose.position.y = float(fused[1])
+            qf = quaternion_from_euler(0, 0, float(fused[2]))
+            odom.pose.pose.orientation.x = qf[0]
+            odom.pose.pose.orientation.y = qf[1]
+            odom.pose.pose.orientation.z = qf[2]
+            odom.pose.pose.orientation.w = qf[3]
             self.odom_pub.publish(odom)
 
-            self.get_logger().info(f"x: {pos[0]} y: {pos[1]} yaw: {np.rad2deg(yaw)}")
-
+            self.get_logger().info(f"loc x={fused[0]:.2f} y={fused[1]:.2f} yaw={np.rad2deg(fused[2]):.1f}")
+            
         except Exception as e:
-            self.get_logger().warn(f"Transform unavailable: {e}")
+            self.get_logger().warn(f"No tag measurement: {e}")
+
 
 def main(args=None):
     rclpy.init(args=args)

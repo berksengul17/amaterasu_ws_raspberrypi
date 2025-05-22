@@ -189,6 +189,11 @@ void Robot::updatePid(int32_t fl_encoder_ticks, int32_t fr_encoder_ticks,
     l_pwm = std::max(std::min(l_pwm, 1.0f), -1.0f);
     r_pwm = std::max(std::min(r_pwm, 1.0f), -1.0f);
 
+    if (!left_reverse && !right_reverse && _l_setpoint != 0 && _r_setpoint != 0) {
+        l_pwm = std::min(l_pwm, 0.3f);
+        r_pwm = std::min(r_pwm, 0.3f);
+    }
+
     _fl_motor.write(l_pwm);
     _rl_motor.write(l_pwm);
     _fr_motor.write(r_pwm);
