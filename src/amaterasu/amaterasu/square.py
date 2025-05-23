@@ -21,7 +21,7 @@ class NavigateToGoal(Node):
 
         # 1) declare & read the robot namespace param
         self.declare_parameter('robot_ns', '')  # e.g. "robot1"
-        self.declare_parameter('robot_list', ['robot1', 'robot2'])
+        self.declare_parameter('robot_list', ['diff_drive'])
 
         ns = self.get_parameter('robot_ns').get_parameter_value().string_value
         prefix = f"/{ns}" if ns else ""
@@ -207,33 +207,63 @@ class NavigateToGoal(Node):
             x = ox + (i + 0.5) * res
             y = oy + (j + 0.5) * res
             return (x, y)
-                
-        def free(cell):
-            i,j = cell
-            if not (0<=i<w and 0<=j<h):
-                return False
-            # static obstacles:
-            if data[j*w + i] >= 50:
+
+        def free(i, j):
+            if (i, j) == goal_c:
+                return True
+            # 1) bounds check
+            if not (0 <= i < w and 0 <= j < h):
                 return False
 
-            # dynamic: get the world‐coords of the center of that cell
-            wx, wy = to_world(i,j)
-            # if any robot is within r_safe, treat as blocked:
-            for (ox,oy) in self.other_robot_positions.values():
-                if math.hypot(wx-ox, wy-oy) < self.safe_radius*2.0:
-                    return False
+            # 2) for every neighbor within robot_radius, bail out if occupied
+            inflate_cells = int(math.ceil(self.robot_radius / res))
+            for di in range(-inflate_cells, inflate_cells+1):
+                for dj in range(-inflate_cells, inflate_cells+1):
+                    # only care about cells inside a circle
+                    if di*di + dj*dj > inflate_cells*inflate_cells:
+                        continue
+                    ni, nj = i+di, j+dj
+                    if 0 <= ni < w and 0 <= nj < h:
+                        if data[nj*w + ni] >= 20:
+                            return False
 
+            # 3) it’s free
             return True
+
+        # def free(cell):
+        #     i,j = cell
+        #     if not (0<=i<w and 0<=j<h):
+        #         return False
+        #     # static obstacles:
+        #     if data[j*w + i] >= 20:
+        #         return False
+
+        #     return True             
+        # inflate_cells = 0
+
+        # def free(i, j):
+        #     # if (i,j) itself is out of bounds or occupied, reject
+        #     if not (0 <= i < w and 0 <= j < h):
+        #         return False
+        #     # scan a square of size (2*inflate_cells+1)^2
+        #     for di in range(-inflate_cells, inflate_cells+1):
+        #         for dj in range(-inflate_cells, inflate_cells+1):
+        #             ni, nj = i+di, j+dj
+        #             if 0 <= ni < w and 0 <= nj < h:
+        #                 # if math.hypot(di, dj) * res <= 2*self.safe_radius:
+        #                 if data[nj*w + ni] >= 20:
+        #                     return False
+        #     return True
 
         start_c = to_cell(*start)
         goal_c  = to_cell(*goal)
 
         # --- debug block START ---
         self.get_logger().info(f"MAP: width={w}, height={h}, data_len={len(data)}")
-        occ_idxs = [idx for idx, v in enumerate(data) if v >= 50]
-        self.get_logger().info(f"Obstacle indices (>=50): {occ_idxs[:5]}{'...' if len(occ_idxs)>5 else ''}")
-        self.get_logger().info(f"start {start} → cell {start_c}, free? {free(start_c)}")
-        self.get_logger().info(f"goal  {goal}  → cell {goal_c},  free? {free(goal_c)}")
+        occ_idxs = [idx for idx, v in enumerate(data) if v >= 20]
+        self.get_logger().info(f"Obstacle indices (>=20): {occ_idxs[:5]}{'...' if len(occ_idxs)>5 else ''}")
+        self.get_logger().info(f"start {start} → cell {start_c}, free? {free(*start_c)}")
+        self.get_logger().info(f"goal  {goal}  → cell {goal_c},  free? {free(*goal_c)}")
         # --- debug block END ---
 
         open_set  = [(0, start_c)]
@@ -259,7 +289,7 @@ class NavigateToGoal(Node):
 
             for di, dj in dirs:
                 nb = (cur[0] + di, cur[1] + dj)
-                is_free = free(nb)
+                is_free = free(*nb)
                 self.get_logger().info(f"  Neighbor {nb} → free? {is_free}")
                 if not is_free:
                     continue
@@ -295,8 +325,8 @@ class NavigateToGoal(Node):
 
     # Update goal coordinates
     def goal_callback(self, goal_request):
-        self.goal_x = goal_request.x
-        self.goal_y = goal_request.y
+        self.goal_x = goal_request.x / 10.0
+        self.goal_y = goal_request.y / 10.0
 
         self.get_logger().info(f'Received goal request: ({self.goal_x}, {self.goal_y})')
         self.get_logger().info(f'Current position: ({self.current_x}, {self.current_y})')
@@ -321,7 +351,7 @@ class NavigateToGoal(Node):
 
         # initial start & goal
         start = (self.current_x, self.current_y)
-        goal  = (goal_handle.request.x, goal_handle.request.y)
+        goal  = (self.goal_x, self.goal_y)
         feedback = GoToGoal.Feedback()
 
         # 1) plan once
@@ -391,11 +421,11 @@ class NavigateToGoal(Node):
                 angular_z = self.calculate_w(self.theta_desired)
                 linear_x  = 0.0 if abs(self.theta_desired) > self.theta_tolerance else speed
 
-                if (linear_x == 0):
-                    if (angular_z > 0 and angular_z < 1):
-                        angular_z = 0.7
-                    elif (angular_z < 0 and angular_z > -1):
-                        angular_z = -0.7
+                # if (linear_x == 0):
+                #     if (angular_z > 0 and angular_z < 1):
+                #         angular_z = 0.9
+                #     elif (angular_z < 0 and angular_z > -1):
+                #         angular_z = -0.9
 
                 twist = Twist()
                 twist.linear.x  = float(linear_x)

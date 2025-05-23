@@ -8,10 +8,10 @@
 #define L_EN_PIN 13
 #define R_EN_PIN 12
 
-#define FL_IN1_PIN 17
-#define FL_IN2_PIN 27
-#define FR_IN1_PIN 22
-#define FR_IN2_PIN 23
+#define FL_IN1_PIN 27
+#define FL_IN2_PIN 17
+#define FR_IN1_PIN 23
+#define FR_IN2_PIN 22
 
 #define RL_IN1_PIN 26
 #define RL_IN2_PIN 16

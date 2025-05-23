@@ -8,7 +8,7 @@ from collections import deque
 class SimPlaybackNode(Node):
     def __init__(self):
         super().__init__('sim_playback')
-        ns_val = self.declare_parameter('robot_ns', 'robot1').value
+        ns_val = self.declare_parameter('robot_ns', 'diff_drive').value
         prefix = f"/{ns_val}" if ns_val else ""
 
         self.sub = self.create_subscription(
