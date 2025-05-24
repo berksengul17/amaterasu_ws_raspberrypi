@@ -86,7 +86,7 @@ class NavigateToGoal(Node):
         self.r_desired = 0
         self.theta_desired = 0
 
-        self.r_tolerance = 0.2 # meters
+        self.r_tolerance = 0.1 # meters
         self.theta_tolerance = 0.2 # radians ~ 5 degrees
 
         self.sample_time = 0.01 # s

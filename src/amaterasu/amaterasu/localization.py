@@ -149,7 +149,7 @@ class AprilTagLocalizationNode(Node):
             odom.header.frame_id = self.origin_frame
             odom.pose.pose.position.x = float(fused[0])
             odom.pose.pose.position.y = float(fused[1])
-            qf = quaternion_from_euler(0, 0, float(fused[2]))
+            qf = quaternion_from_euler(0, 0, float(meas_yaw))
             odom.pose.pose.orientation.x = qf[0]
             odom.pose.pose.orientation.y = qf[1]
             odom.pose.pose.orientation.z = qf[2]
